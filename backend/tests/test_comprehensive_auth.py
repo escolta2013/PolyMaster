@@ -41,8 +41,15 @@ def test_comprehensive_auth():
     
     trades_found = False
     for i, market in enumerate(markets[:5], 1):
-        print(f"\n   Market {i}: {market.get('question', 'N/A')[:60]}...")
-        print(f"   Volume: ${float(market.get('volume', 0)):,.0f}")
+        question = market.get('question', 'N/A')
+        # Fix encoding for Windows terminal
+        safe_question = question.encode('ascii', 'ignore').decode('ascii')[:60]
+        print(f"\n   Market {i}: {safe_question}...")
+        try:
+            volume = float(market.get('volume', 0))
+            print(f"   Volume: ${volume:,.0f}")
+        except:
+            print(f"   Volume: {market.get('volume', 'N/A')}")
         
         try:
             details = indexer.get_market_details(market['id'])
