@@ -6,6 +6,7 @@ class WalletStats(BaseModel):
     win_rate: float # Percentage (e.g., 0.60)
     total_trades: int
     profit_usdc: float
+    volume_usdc: float
 
 class WalletGrader:
     """
@@ -14,22 +15,28 @@ class WalletGrader:
     """
     
     def grade_wallet(self, stats: WalletStats) -> str:
-        # Tier A: The Whales / Sharps
-        # High volume, high conviction, consistent returns
-        if stats.roi >= 0.20 and stats.win_rate >= 0.60 and stats.total_trades > 50:
-            return "A"
+        """
+        Grades wallets based on volume, ROI, and win rate.
+        Tiers: WHALE, SHARK, ORCA, FISH, PLANKTON
+        """
+        # 1. WHALE: High volume giants
+        if stats.volume_usdc >= 1000000 and stats.roi >= 0.15:
+            return "WHALE"
+        
+        # 2. SHARK: Skilled high-volume players
+        if stats.volume_usdc >= 100000 and stats.roi >= 0.20 and stats.win_rate >= 0.60:
+            return "SHARK"
             
-        # Tier B: Profitable Regulars
-        # Good signals but maybe less volume or slightly more risk
-        if stats.roi >= 0.10 and stats.win_rate > 0.50 and stats.total_trades > 20:
-            return "B"
+        # 3. ORCA: Profitable regulars
+        if stats.roi >= 0.15 and stats.win_rate >= 0.55 and stats.total_trades >= 30:
+            return "ORCA"
             
-        # Tier C: Break-even / Noise
-        if stats.roi >= 0.0:
-            return "C"
+        # 4. FISH: Profitable but low volume or few trades
+        if stats.profit_usdc > 0 and stats.roi > 0:
+            return "FISH"
             
-        # Tier D: Rekt / Gamblers
-        return "D"
+        # 5. PLANKTON: Unprofitable or noise
+        return "PLANKTON"
 
     def is_smart_money(self, grade: str) -> bool:
-        return grade in ["A", "B"]
+        return grade in ["WHALE", "SHARK", "ORCA"]

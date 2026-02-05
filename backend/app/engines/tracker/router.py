@@ -12,14 +12,47 @@ async def get_top_markets(limit: int = 10):
     markets = tracker.indexer.get_top_markets(limit)
     return {"count": len(markets), "markets": markets}
 
-@router.get("/smart-money")
-async def get_smart_money():
+@router.get("/wallets")
+async def get_wallets(grade: str = None, sort_by: str = "roi", limit: int = 50):
     """
-    Fetch the list of identified smart money wallets from the database.
+    Fetch wallets with optional filtering and sorting.
     """
     try:
-        response = tracker.supabase.table("wallets").select("*").eq("is_smart_money", True).execute()
+        query = tracker.supabase.table("wallets").select("*")
+        if grade:
+            query = query.eq("grade", grade.upper())
+        
+        # Determine sorting column
+        sort_col = "roi"
+        if sort_by == "volume": sort_col = "volume_usdc"
+        if sort_by == "profit": sort_col = "profit_usdc"
+        
+        response = query.order(sort_col, desc=True).limit(limit).execute()
         return response.data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/stats")
+async def get_stats():
+    """
+    Fetch high-level tracking statistics.
+    """
+    try:
+        res = tracker.supabase.table("wallets").select("grade, is_smart_money").execute()
+        data = res.data
+        
+        stats = {
+            "total_tracked": len(data),
+            "smart_money_count": len([d for d in data if d["is_smart_money"]]),
+            "by_grade": {
+                "WHALE": len([d for d in data if d["grade"] == "WHALE"]),
+                "SHARK": len([d for d in data if d["grade"] == "SHARK"]),
+                "ORCA": len([d for d in data if d["grade"] == "ORCA"]),
+                "FISH": len([d for d in data if d["grade"] == "FISH"]),
+                "PLANKTON": len([d for d in data if d["grade"] == "PLANKTON"]),
+            }
+        }
+        return stats
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

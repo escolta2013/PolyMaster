@@ -87,14 +87,17 @@ class SmartMoneyTracker:
                 total_trades = len(positions)
                 total_realized_pnl = 0.0
                 total_initial_value = 0.0
+                total_volume = 0.0
                 wins = 0
                 
                 for pos in positions:
                     realized = float(pos.get("realizedPnl", 0))
-                    initial = float(pos.get("initialValue", 1e-9)) # Avoid div by zero
-                    
-                    total_realized_pnl += realized
+                    initial = float(pos.get("initialValue", 0)) 
+                    # Volume heuristic: initial value + any realized value
+                    # Data API doesn't give 'volume' directly per position, but initialValue is a good proxy for size
                     total_initial_value += initial
+                    total_realized_pnl += realized
+                    total_volume += initial # Simplistic volume
                     
                     # Heuristic for a 'win': positive realized PnL or positive current PnL
                     if realized > 0 or float(pos.get("cashPnl", 0)) > 0:
@@ -110,7 +113,7 @@ class SmartMoneyTracker:
                     win_rate=win_rate,
                     total_trades=total_trades,
                     profit_usdc=total_realized_pnl,
-                    total_invested=total_initial_value
+                    volume_usdc=total_volume
                 )
                 
                 grade = self.grader.grade_wallet(stats)
@@ -124,6 +127,7 @@ class SmartMoneyTracker:
                     "win_rate": float(round(win_rate, 4)),
                     "total_trades": total_trades,
                     "profit_usdc": float(round(total_realized_pnl, 2)),
+                    "volume_usdc": float(round(total_volume, 2)),
                     "is_smart_money": is_smart,
                     "last_updated": datetime.utcnow().isoformat()
                 }).execute()
