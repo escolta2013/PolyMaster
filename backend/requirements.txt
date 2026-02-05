@@ -9,3 +9,4 @@ web3
 redis
 python-multipart
 websockets
+py-clob-client
