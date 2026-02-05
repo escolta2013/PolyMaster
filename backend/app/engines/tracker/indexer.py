@@ -33,6 +33,25 @@ class PolymarketIndexer:
             logger.error(f"Error fetching markets: {e}")
             return []
 
-    def get_market_positions(self, market_id: str) -> List[Dict]:
-        # TODO: Implement CLOB trade history fetching for specific market
-        pass
+    def get_market_details(self, market_id: str) -> Dict[str, Any]:
+        """
+        Fetch details for a specific market.
+        """
+        try:
+            url = f"{self.BASE_URL}/markets/{market_id}"
+            response = requests.get(url)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error(f"Error fetching market details for {market_id}: {e}")
+            return {}
+
+    def get_market_traders(self, market_id: str) -> List[str]:
+        """
+        Find active traders in a market.
+        Note: This is a simplified version. Real implementation would traverse 
+        the limit order book or recent trades via CLOB API.
+        """
+        # TODO: Integrate with Polymarket CLOB (Central Limit Order Book)
+        # For now, return a placeholder list of active addresses linked to this market
+        return []
