@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+supabase
+pydantic
+python-dotenv
+requests
+httpx
+web3
+redis
+python-multipart
+websockets
