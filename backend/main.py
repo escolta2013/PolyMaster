@@ -24,6 +24,12 @@ from app.engines.tracker.router import router as tracker_router
 
 app.include_router(tracker_router)
 
+from app.engines.ghost.router import router as ghost_router
+app.include_router(ghost_router)
+
+from app.engines.council.router import router as council_router
+app.include_router(council_router)
+
 @app.get("/")
 def health_check():
     return {

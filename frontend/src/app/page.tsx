@@ -8,8 +8,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default function Home() {
   const [stats, setStats] = React.useState<any>(null);
+  const [mounted, setMounted] = React.useState(false);
+  const [syncTime, setSyncTime] = React.useState("");
 
   React.useEffect(() => {
+    setMounted(true);
+    setSyncTime(new Date().toLocaleTimeString());
+
     async function fetchStats() {
       try {
         const res = await fetch("http://127.0.0.1:8000/tracker/stats");
@@ -49,7 +54,7 @@ export default function Home() {
             Quantum-Node: Active
           </div>
           <div className="text-[10px] text-slate-500 font-mono uppercase tracking-tighter">
-            Last Block Sync: {new Date().toLocaleTimeString()}
+            Last Block Sync: {mounted ? syncTime : "--:--:--"}
           </div>
         </div>
       </div>
