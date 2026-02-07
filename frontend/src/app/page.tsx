@@ -6,6 +6,14 @@ import { SmartMoneyWallets } from "@/components/SmartMoneyWallets";
 import { TrendingUp, Users, Wallet, Target, Activity, Zap, Shield, Globe } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
+// Helper to format compact numbers (1.2M, 500K)
+function formatCompactNumber(num: number) {
+  return Intl.NumberFormat('en-US', {
+    notation: "compact",
+    maximumFractionDigits: 1
+  }).format(num);
+}
+
 export default function Home() {
   const [stats, setStats] = React.useState<any>(null);
   const [mounted, setMounted] = React.useState(false);
@@ -63,27 +71,27 @@ export default function Home() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
         <KPIItem
           title="Monitored Entities"
-          value={stats?.total_tracked || "--"}
+          value={stats?.total_tracked ? stats.total_tracked.toLocaleString() : "--"}
           caption="Active Network Signatures"
           icon={<Users className="w-4 h-4 text-slate-400" />}
         />
         <KPIItem
           title="Classified Alpha"
-          value={stats?.smart_money_count || "--"}
+          value={stats?.smart_money_count ? stats.smart_money_count.toLocaleString() : "--"}
           caption="Verified Institutional Wallets"
           color="text-purple-400"
           icon={<Zap className="w-4 h-4 text-purple-500" />}
         />
         <KPIItem
           title="Whale Concentration"
-          value={stats?.by_grade?.WHALE || "--"}
+          value={stats?.by_grade?.WHALE ? stats.by_grade.WHALE.toLocaleString() : "--"}
           caption="High-Liquidity Nodes"
           color="text-blue-400"
           icon={<Target className="w-4 h-4 text-blue-500" />}
         />
         <KPIItem
           title="Network Volume"
-          value="$1.4M"
+          value={stats?.total_volume ? `$${formatCompactNumber(stats.total_volume)}` : "--"}
           caption="24h Aggregate Exposure"
           color="text-emerald-500"
           icon={<TrendingUp className="w-4 h-4 text-emerald-500" />}

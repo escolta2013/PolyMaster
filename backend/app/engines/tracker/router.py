@@ -38,12 +38,14 @@ async def get_stats():
     Fetch high-level tracking statistics.
     """
     try:
-        res = tracker.supabase.table("wallets").select("grade, is_smart_money").execute()
+        res = tracker.supabase.table("wallets").select("grade, is_smart_money, volume_usdc, profit_usdc").execute()
         data = res.data
         
         stats = {
             "total_tracked": len(data),
             "smart_money_count": len([d for d in data if d["is_smart_money"]]),
+            "total_volume": sum(d.get("volume_usdc", 0) or 0 for d in data),
+            "total_profit": sum(d.get("profit_usdc", 0) or 0 for d in data),
             "by_grade": {
                 "WHALE": len([d for d in data if d["grade"] == "WHALE"]),
                 "SHARK": len([d for d in data if d["grade"] == "SHARK"]),

@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
-import { Bot, BrainCircuit, ShieldAlert, MessageSquare } from "lucide-react"
+import { Bot, BrainCircuit, ShieldAlert, MessageSquare, ExternalLink, Globe } from "lucide-react"
 
 export default function CouncilPage() {
     const [feed, setFeed] = React.useState<any[]>([])
@@ -31,7 +31,8 @@ export default function CouncilPage() {
     return (
         <div className="container mx-auto px-6 py-10 space-y-8 max-w-7xl font-sans selection:bg-blue-500/30">
             {/* Header */}
-            <div className="flex items-center justify-between border-b border-white/5 pb-8">
+            <div className="flex items-center justify-between border-b border-white/5 pb-8 relative">
+                <div className="absolute -top-10 -left-10 w-40 h-40 bg-blue-500/10 rounded-full blur-[100px] pointer-events-none" />
                 <div>
                     <h1 className="text-4xl font-black tracking-tighter text-slate-100 flex items-center gap-3">
                         <Bot className="w-8 h-8 text-blue-500" />
@@ -76,7 +77,7 @@ export default function CouncilPage() {
                                     <div className="text-center text-slate-500">No signals requiring attention.</div>
                                 ) : (
                                     feed.map((item, i) => (
-                                        <div key={i} className="flex gap-4 p-4 rounded-lg bg-slate-900/30 border border-slate-800/50">
+                                        <div key={i} className="flex gap-4 p-4 rounded-lg bg-slate-900/30 border border-slate-800/50 hover:border-blue-500/20 transition-colors">
                                             <div className="mt-1">
                                                 {item.agent === "FedWatcher" && <BrainCircuit className="w-5 h-5 text-purple-400" />}
                                                 {item.agent === "RuleLawyer" && <ShieldAlert className="w-5 h-5 text-yellow-400" />}
@@ -84,15 +85,34 @@ export default function CouncilPage() {
                                             </div>
                                             <div className="flex-1">
                                                 <div className="flex justify-between items-center mb-1">
-                                                    <span className="font-bold text-sm text-slate-200">{item.agent}</span>
+                                                    <span className="font-bold text-sm text-slate-200 uppercase tracking-tighter">{item.agent}</span>
                                                     <span className="text-[10px] text-slate-500 uppercase tracking-wider">{item.timestamp}</span>
                                                 </div>
-                                                <p className="text-sm text-slate-400 leading-relaxed mb-2">{item.content}</p>
+                                                <p className="text-sm text-slate-100 font-medium leading-relaxed mb-1">{item.content}</p>
+
+                                                {item.metadata && (
+                                                    <div className="mb-3 p-2 bg-slate-950/50 rounded border border-white/5 space-y-1">
+                                                        <div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest flex items-center gap-1">
+                                                            <Globe className="w-2.5 h-2.5" />
+                                                            Ref: {item.metadata.original_title}
+                                                        </div>
+                                                        <a
+                                                            href={item.metadata.url}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="text-[9px] text-blue-400 hover:text-blue-300 flex items-center gap-1 transition-colors uppercase font-black"
+                                                        >
+                                                            Source: {item.metadata.source}
+                                                            <ExternalLink className="w-2 h-2" />
+                                                        </a>
+                                                    </div>
+                                                )}
+
                                                 <div className="flex items-center gap-2">
                                                     <div className="h-1 w-24 bg-slate-800 rounded-full overflow-hidden">
                                                         <div className="h-full bg-emerald-500" style={{ width: `${item.confidence * 100}%` }}></div>
                                                     </div>
-                                                    <span className="text-[10px] font-mono text-emerald-500">{item.confidence * 100}% Confidence</span>
+                                                    <span className="text-[10px] font-mono text-emerald-500">{Math.round(item.confidence * 100)}% Confidence</span>
                                                 </div>
                                             </div>
                                         </div>
