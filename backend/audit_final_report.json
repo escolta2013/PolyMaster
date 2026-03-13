@@ -1,0 +1,22 @@
+{
+    "MANTENIDA": {
+        "WIN": 82,
+        "LOSS": 77,
+        "PENDING": 24
+    },
+    "EXCLUIDA_ESPORTS": {
+        "WIN": 5,
+        "LOSS": 7,
+        "PENDING": 2
+    },
+    "EXCLUIDA_FUTBOL": {
+        "WIN": 5,
+        "LOSS": 6,
+        "PENDING": 0
+    },
+    "EXCLUIDA_PRECIO": {
+        "WIN": 1,
+        "LOSS": 1,
+        "PENDING": 0
+    }
+}

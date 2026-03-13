@@ -1,0 +1,95 @@
+    async def _check_bundle_arb(self, event: Dict, markets: List[Dict]) -> Optional[ArbOpportunity]:
+        """
+        Checks if buying YES on every outcome in a categorical event costs < $1.
+        If so, no matter who wins, we get exactly $1 back.
+        """
+        try:
+            # ── FIX: Skip expired/closed events before hitting the CLOB API ──
+            if event.get("closed") or event.get("archived") or not event.get("active"):
+                return None
+
+            end_date_raw = event.get("endDate") or event.get("end_date_iso")
+            if end_date_raw:
+                try:
+                    end_dt = datetime.fromisoformat(end_date_raw.replace("Z", "+00:00"))
+                    if end_dt < datetime.now(timezone.utc):
+                        return None  # Event already expired — skip to avoid 404s
+                except Exception:
+                    pass
+
+            event_title = event.get("title", event.get("slug", "Unknown Event"))
+            event_id = str(event.get("id", ""))
+
+            outcomes_data = []
+            total_cost = 0.0
+
+            for m in markets:
+                # ── FIX: Also skip individual expired/closed sub-markets ──
+                if m.get("closed") or m.get("archived") or not m.get("active"):
+                    return None
+
+                m_end_raw = m.get("endDate") or m.get("end_date_iso")
+                if m_end_raw:
+                    try:
+                        m_end_dt = datetime.fromisoformat(m_end_raw.replace("Z", "+00:00"))
+                        if m_end_dt < datetime.now(timezone.utc):
+                            return None  # At least one sub-market expired — bundle invalid
+                    except Exception:
+                        pass
+                
+                token_ids_raw = m.get("clobTokenIds", "[]")
+                if isinstance(token_ids_raw, str):
+                    token_ids = json.loads(token_ids_raw)
+                else:
+                    token_ids = token_ids_raw or []
+
+                if not token_ids:
+                    continue
+
+                yes_token_id = token_ids[0]
+                book = await self.client.get_orderbook(yes_token_id)
+                ask = book.get("best_ask")
+
+                if ask is None:
+                    # If ANY outcome has no liquidity, skip — we can't build the bundle
+                    logger.debug(f"Arbitrage: No ask for '{m.get('question','?')[:30]}', skipping event.")
+                    return None
+
+                outcomes_data.append({
+                    "outcome": m.get("question", "Unknown"),
+                    "token_id": yes_token_id,
+                    "ask_price": ask,
+                })
+                total_cost += ask
+
+                await asyncio.sleep(0.1)  # Be gentle with the API
+
+            if len(outcomes_data) < 3:
+                return None
+
+            if total_cost >= self.max_sum:
+                return None  # No edge
+
+            edge_pct = (1.0 - total_cost) / total_cost
+
+            if edge_pct < self.min_edge_pct:
+                return None
+
+            logger.success(
+                f"Arbitrage [BUNDLE FOUND]: '{event_title[:50]}' | "
+                f"{len(outcomes_data)} outcomes | Sum={total_cost:.4f} | Edge: {edge_pct*100:.2f}%"
+            )
+
+            return ArbOpportunity(
+                arb_type="bundle",
+                market_id=event_id,
+                question=event_title,
+                total_cost=total_cost,
+                guaranteed_payout=1.0,
+                edge_pct=edge_pct,
+                outcomes=outcomes_data,
+            )
+
+        except Exception as e:
+            logger.debug(f"Arbitrage: Bundle check error: {e}")
+            return None
