@@ -107,7 +107,7 @@ if __name__ == "__main__":
         .select("market_id, market_question, best_ask, council_score") \
         .eq("decision", "WOULD_EXECUTE") \
         .order("detected_at", desc=True) \
-        .limit(100) \
+        .limit(500) \
         .execute()
     
     if res.data:

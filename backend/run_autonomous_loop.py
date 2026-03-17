@@ -171,7 +171,7 @@ class OutcomeResolver:
     GAMMA_BASE = "https://gamma-api.polymarket.com"
     WIN_THRESHOLD  = 0.98
     LOSS_THRESHOLD = 0.02
-    BATCH_SIZE     = 20   # Max markets per cycle to avoid rate limiting
+    BATCH_SIZE     = 100  # Increased to clear backlog faster
     MIN_AGE_MINUTES = 120  # Only check trades older than 2 hours
 
     def __init__(self):
@@ -191,18 +191,36 @@ class OutcomeResolver:
         import httpx
         sb = self._get_supabase()
 
-        # Fetch PENDING trades older than MIN_AGE_MINUTES
+        # Fetch PENDING trades: prioritize those whose market end_date has already passed.
+        # Markets with end_date_iso=NULL (long-running/unknown) are processed last.
+        now_iso = datetime.now(timezone.utc).isoformat()
         cutoff = (datetime.now(timezone.utc) - timedelta(minutes=self.MIN_AGE_MINUTES)).isoformat()
         try:
+            # Try first: markets with a known end_date that has already passed
             rows = (
                 sb.table("autonomous_logs")
-                .select("id, market_id, correct, detected_at")
+                .select("id, market_id, correct, detected_at, end_date_iso")
                 .eq("correct", "PENDING")
                 .eq("decision", "WOULD_EXECUTE")
                 .lt("detected_at", cutoff)
+                .lt("end_date_iso", now_iso)
+                .order("end_date_iso", desc=False)
                 .limit(self.BATCH_SIZE)
                 .execute()
             ).data
+
+            # If no expired markets, fall back to NULL end_date markets (check via API)
+            if not rows:
+                rows = (
+                    sb.table("autonomous_logs")
+                    .select("id, market_id, correct, detected_at, end_date_iso")
+                    .eq("correct", "PENDING")
+                    .eq("decision", "WOULD_EXECUTE")
+                    .lt("detected_at", cutoff)
+                    .is_("end_date_iso", "null")
+                    .limit(self.BATCH_SIZE)
+                    .execute()
+                ).data
         except Exception as e:
             logger.error(f"[RESOLVER] Failed to fetch PENDING trades: {e}")
             return {"checked": 0, "wins": 0, "losses": 0, "still_pending": 0, "errors": 1}
@@ -229,37 +247,43 @@ class OutcomeResolver:
                         continue
 
                     data = r.json()
+                    is_closed = data.get("closed", False)
+                    resolved_price = None
 
-                    # Try best_ask first, fall back to outcomePrices[0]
-                    best_ask = None
-                    raw_ask = data.get("bestAsk") or data.get("best_ask")
-                    if raw_ask is not None:
-                        try:
-                            best_ask = float(raw_ask)
-                        except (ValueError, TypeError):
-                            pass
-
-                    if best_ask is None:
+                    # 1. If market is closed, PRIORITIZE outcomePrices (resolution values)
+                    if is_closed:
                         outcome_prices = data.get("outcomePrices")
                         if outcome_prices:
                             try:
                                 prices = json.loads(outcome_prices) if isinstance(outcome_prices, str) else outcome_prices
-                                best_ask = float(prices[0])
+                                if prices and len(prices) > 0:
+                                    resolved_price = float(prices[0])
+                                    logger.debug(f"[RESOLVER] Market {market_id} CLOSED. Using resolution price: {resolved_price}")
                             except Exception:
                                 pass
 
-                    if best_ask is None:
+                    # 2. Fallback to bestAsk if not closed or resolution price couldn't be parsed
+                    if resolved_price is None:
+                        raw_ask = data.get("bestAsk") or data.get("best_ask")
+                        if raw_ask is not None:
+                            try:
+                                resolved_price = float(raw_ask)
+                            except (ValueError, TypeError):
+                                pass
+
+                    if resolved_price is None:
                         still_pending += 1
                         continue
 
-                    if best_ask >= self.WIN_THRESHOLD:
+                    if resolved_price >= self.WIN_THRESHOLD:
                         updates.append({"id": row_id, "correct": "WIN"})
                         wins += 1
-                    elif best_ask <= self.LOSS_THRESHOLD:
+                    elif resolved_price <= self.LOSS_THRESHOLD:
                         updates.append({"id": row_id, "correct": "LOSS"})
                         losses += 1
                     else:
                         still_pending += 1
+
 
                 except Exception as e:
                     logger.debug(f"[RESOLVER] Error resolving market {market_id}: {e}")
@@ -356,7 +380,7 @@ async def autonomous_loop():
 
             # ── Step 3: Discovery Mode with Dynamic Scheduler ─────────────────
             logger.info("Step 3: Discovery Mode (Hybrid freshest/volume feed)...")
-            top_markets = await indexer.get_top_markets(limit=30)
+            top_markets = await indexer.get_top_markets(limit=15)
 
             processed_discovery = 0
             skipped_scheduler = 0

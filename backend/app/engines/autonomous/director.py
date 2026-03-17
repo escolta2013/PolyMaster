@@ -98,22 +98,31 @@ class DirectorAgent:
             "be between $", "nvidia", "nvda", "share price", "stock price",
             "above $180", "above $66,000", "above $100,000",
         ]
-        # NBA keywords — Council lacks real NBA data (balldontlie.io bug) + proven EV=-0.162
+        # NBA, Tennis, and generic Sports capital destroyers
         _nba_kw = [
-            "nba", " vs. " ,
+            "nba", " vs ", " vs. ", "76ers", "sixers", "76'ers",
             "celtics", "lakers", "warriors", "knicks", "nets", "bucks", "heat",
             "nuggets", "suns", "clippers", "grizzlies", "thunder", "mavs",
             "spurs", "rockets", "pistons", "pacers", "hawks", "hornets",
             "wizards", "magic", "raptors", "cavaliers", "timberwolves", "jazz",
-            "pelicans", "kings", "blazers", "trail blazers",
+            "pelicans", "kings", "blazers", "trail blazers", "bulls",
         ]
-        # Tennis keywords — Council systematically predicts loser: EV=-0.269 (n=75)
         _tennis_kw = [
             "tennis", " atp ", "wta ", "grand slam", "wimbledon", "roland garros",
             "djokovic", "alcaraz", "sinner", "medvedev", "rublev", "zverev",
             "swiatek", "sabalenka", "gauff", "keys", "navarro",
             "bnp paribas open", "dubai tennis", "indian wells", "miami open",
             "australian open", "us open", "french open",
+            "kigali", "phoenix", "austin", "santiago", "cherbourg", "hersonissos",
+            "challenger", "itf ", "itf:", "itf/", "antalya",
+        ]
+        _unpredictable_kw = [
+            "up or down", "up/down", "price of bitcoin", "price of ethereum",
+            "price of solana", "price of xrp", "microsoft", "nvidia", "msft", "nvda",
+            "box office", "opening weekend", "mrbeast", "tweets by", "@elonmusk",
+            "number of tweets", "elon musk", "world baseball classic", "bangladesh vs pakistan",
+            "to go the distance", "points", "rebounds", "assists", "spread", "handicap",
+            "over/under", "o/u",
         ]
 
         # 1.4 Category Exclusion (NBA, Tennis capital destroyers + Dynamic Settings)
@@ -144,6 +153,8 @@ class DirectorAgent:
                 _excluded_reason = "nba_excluded_ev_negative"
             elif any(k in q_lower for k in _tennis_kw):
                 _excluded_reason = "tennis_excluded_ev_negative"
+            elif any(k in q_lower for k in _unpredictable_kw):
+                _excluded_reason = "unpredictable_variancy_excluded"
 
         if _excluded_reason:
             logger.info(f"Director: [{_excluded_reason}] early-exit for '{question[:50]}' — no Council call.")
@@ -298,10 +309,9 @@ class DirectorAgent:
                                 return {"status": "skipped", "reason": "market_expired"}
 
                             max_duration_secs = settings.AUTONOMOUS_MAX_MARKET_DURATION_HOURS * 3600
-                            # DISABLED FOR TESTING: Strict max duration Filter
-                            # if time_to_end.total_seconds() > max_duration_secs:
-                            #     logger.info(f"Director: Skipping long-term market '{question}' (Ends in {time_to_end.days} days). Limit is {settings.AUTONOMOUS_MAX_MARKET_DURATION_HOURS}h.")
-                            #     return {"status": "skipped", "reason": "long_term_market_gt_limit"}
+                            if time_to_end.total_seconds() > max_duration_secs:
+                                logger.info(f"Director: Skipping long-term market '{question}' (Ends in {time_to_end.days} days). Limit is {settings.AUTONOMOUS_MAX_MARKET_DURATION_HOURS}h.")
+                                return {"status": "skipped", "reason": "long_term_market_gt_limit"}
                             
                             logger.info(f"Director: Proceeding with market: '{question}' (Ends in {time_to_end})")
                             
@@ -357,6 +367,7 @@ class DirectorAgent:
             asks_size = cluster_alert.get("clob_asks_size")
             if bids_size is not None and asks_size is not None and (bids_size + asks_size) > 0:
                 vpin = abs(bids_size - asks_size) / (bids_size + asks_size)
+                logger.debug(f"Director: VPIN check for {question[:30]} | Bids: {bids_size:.1f} | Asks: {asks_size:.1f} | VPIN: {vpin:.2f}")
                 if vpin > 0.70:
                     logger.warning(f"Director: VPIN KILL SWITCH triggered for {question[:30]} (VPIN: {vpin:.2f}). Possible toxic flow.")
                     return {"status": "skipped", "reason": "vpin_toxic_flow", "vpin": vpin}
@@ -740,7 +751,8 @@ class DirectorAgent:
                         "best_bid": best_bid,
                         "spread": round(spread, 4),
                         "detected_at": datetime.now(timezone.utc).isoformat(),
-                        "source": source
+                        "source": source,
+                        "end_date_iso": end_date_iso if 'end_date_iso' in locals() else None
                     }
                     supabase.table("autonomous_logs").insert(paper_entry).execute()
                     logger.info(f"[PAPER] Logged {paper_status} for {market_id}")
@@ -833,7 +845,8 @@ class DirectorAgent:
                 "best_bid": best_bid,
                 "spread": spread,
                 "detected_at": datetime.now(timezone.utc).isoformat(),
-                "source": source
+                "source": source,
+                "end_date_iso": end_date_iso if 'end_date_iso' in locals() else None
             }
             supabase.table("autonomous_logs").insert(log_entry).execute()
             logger.info(f"Director: Logged decision {decision_status} for {market_id}")
