@@ -199,7 +199,7 @@ class OutcomeResolver:
             # Try first: markets with a known end_date that has already passed
             rows = (
                 sb.table("autonomous_logs")
-                .select("id, market_id, correct, detected_at, end_date_iso")
+                .select("id, market_id, correct, detected_at, end_date_iso, outcome")
                 .eq("correct", "PENDING")
                 .eq("decision", "WOULD_EXECUTE")
                 .lt("detected_at", cutoff)
@@ -209,18 +209,19 @@ class OutcomeResolver:
                 .execute()
             ).data
 
-            # If no expired markets, fall back to NULL end_date markets (check via API)
-            if not rows:
-                rows = (
+            if len(rows) < self.BATCH_SIZE:
+                null_rows = (
                     sb.table("autonomous_logs")
-                    .select("id, market_id, correct, detected_at, end_date_iso")
+                    .select("id, market_id, correct, detected_at, end_date_iso, outcome")
                     .eq("correct", "PENDING")
                     .eq("decision", "WOULD_EXECUTE")
                     .lt("detected_at", cutoff)
                     .is_("end_date_iso", "null")
-                    .limit(self.BATCH_SIZE)
+                    .limit(self.BATCH_SIZE - len(rows))
                     .execute()
                 ).data
+                if null_rows:
+                    rows.extend(null_rows)
         except Exception as e:
             logger.error(f"[RESOLVER] Failed to fetch PENDING trades: {e}")
             return {"checked": 0, "wins": 0, "losses": 0, "still_pending": 0, "errors": 1}
@@ -232,7 +233,7 @@ class OutcomeResolver:
         wins = losses = still_pending = errors = 0
         updates = []
 
-        async with httpx.AsyncClient(timeout=8.0) as client:
+        async with httpx.AsyncClient(timeout=10.0) as client:
             for row in rows:
                 market_id = row.get("market_id")
                 row_id    = row.get("id")
@@ -240,26 +241,42 @@ class OutcomeResolver:
                     errors += 1
                     continue
                 try:
-                    r = await client.get(f"{self.GAMMA_BASE}/markets/{market_id}")
+                    # Use HTTPS and ensure correct URL
+                    url = f"{self.GAMMA_BASE}/markets/{market_id}"
+                    r = await client.get(url)
                     if r.status_code != 200:
                         logger.debug(f"[RESOLVER] Market {market_id} returned {r.status_code} — skipping.")
                         still_pending += 1
                         continue
 
                     data = r.json()
-                    is_closed = data.get("closed", False)
+                    is_closed = str(data.get("closed", "")).lower() == "true"
                     resolved_price = None
 
                     # 1. If market is closed, PRIORITIZE outcomePrices (resolution values)
+                    # Gamma returns outcomePrices as a JSON string like '["1", "0"]' or '{"0": "1", "1": "0"}'
                     if is_closed:
                         outcome_prices = data.get("outcomePrices")
                         if outcome_prices:
                             try:
-                                prices = json.loads(outcome_prices) if isinstance(outcome_prices, str) else outcome_prices
-                                if prices and len(prices) > 0:
+                                if isinstance(outcome_prices, str):
+                                    prices = json.loads(outcome_prices)
+                                else:
+                                    prices = outcome_prices
+                                
+                                # Handle both list ['1', '0'] and dict {"0": "1"}
+                                if isinstance(prices, list) and len(prices) > 0:
                                     resolved_price = float(prices[0])
+                                elif isinstance(prices, dict):
+                                    # Try both integer keys and string keys
+                                    val = prices.get(0, prices.get("0"))
+                                    if val is not None:
+                                        resolved_price = float(val)
+                                
+                                if resolved_price is not None:
                                     logger.debug(f"[RESOLVER] Market {market_id} CLOSED. Using resolution price: {resolved_price}")
-                            except Exception:
+                            except Exception as parse_e:
+                                logger.debug(f"[RESOLVER] Error parsing outcomePrices for {market_id}: {parse_e}")
                                 pass
 
                     # 2. Fallback to bestAsk if not closed or resolution price couldn't be parsed
@@ -271,38 +288,77 @@ class OutcomeResolver:
                             except (ValueError, TypeError):
                                 pass
 
+                    api_end_date = data.get("endDate")
+
                     if resolved_price is None:
+                        if api_end_date and row.get("end_date_iso") is None:
+                            updates.append({"id": row_id, "correct": "PENDING", "end_date_iso": api_end_date})
                         still_pending += 1
                         continue
 
-                    if resolved_price >= self.WIN_THRESHOLD:
-                        updates.append({"id": row_id, "correct": "WIN"})
-                        wins += 1
-                    elif resolved_price <= self.LOSS_THRESHOLD:
-                        updates.append({"id": row_id, "correct": "LOSS"})
-                        losses += 1
+                    # Determine WIN/LOSS respecting the traded side (YES or NO)
+                    trade_outcome = row.get("outcome") or "YES"
+                    is_no_trade   = str(trade_outcome).strip().upper().startswith("NO")
+
+                    new_status = None
+                    if is_no_trade:
+                        # Bought NO: WIN when YES collapses (price <= 0.02)
+                        #            LOSS when YES resolves  (price >= 0.98)
+                        if resolved_price <= self.LOSS_THRESHOLD:
+                            new_status = "WIN"
+                        elif resolved_price >= self.WIN_THRESHOLD:
+                            new_status = "LOSS"
                     else:
+                        # Bought YES (default): WIN when price >= 0.98
+                        #                       LOSS when price <= 0.02
+                        if resolved_price >= self.WIN_THRESHOLD:
+                            new_status = "WIN"
+                        elif resolved_price <= self.LOSS_THRESHOLD:
+                            new_status = "LOSS"
+                            
+                    if new_status:
+                        payload = {"id": row_id, "correct": new_status}
+                        if api_end_date and row.get("end_date_iso") is None:
+                            payload["end_date_iso"] = api_end_date
+                        updates.append(payload)
+                        if new_status == "WIN": wins += 1
+                        elif new_status == "LOSS": losses += 1
+                    else:
+                        if api_end_date and row.get("end_date_iso") is None:
+                            updates.append({"id": row_id, "correct": "PENDING", "end_date_iso": api_end_date})
                         still_pending += 1
 
-
-                except Exception as e:
-                    logger.debug(f"[RESOLVER] Error resolving market {market_id}: {e}")
+                except Exception as row_e:
+                    logger.debug(f"[RESOLVER] Error resolving market {market_id}: {row_e}")
                     errors += 1
 
         # Batch update Supabase
         if updates:
             try:
+                # Use individual updates but with better error reporting per row if one fails
+                # Supabase upsert requires full row which we don't have here efficiently.
+                # 'str' object has no attribute 'items' usually happens if update() receives a string.
+                # We ensure we pass a dict literal here.
+                processed_ok = 0
                 for upd in updates:
-                    sb.table("autonomous_logs").update(
-                        {"correct": upd["correct"]}
-                    ).eq("id", upd["id"]).execute()
+                    try:
+                        # Explicitly ensure payload is a dict
+                        payload = {"correct": str(upd["correct"])}
+                        if "end_date_iso" in upd:
+                            payload["end_date_iso"] = upd["end_date_iso"]
+                        sb.table("autonomous_logs").update(payload).eq("id", upd["id"]).execute()
+                        processed_ok += 1
+                    except Exception as upd_e:
+                        logger.error(f"[RESOLVER] Failed to update row {upd['id']}: {upd_e}")
+                        errors += 1
+                
                 logger.info(
-                    f"[RESOLVER] Resolved {len(updates)} trades: "
-                    f"{wins} WIN, {losses} LOSS | "
+                    f"[RESOLVER] Resolved {processed_ok}/{len(updates)} pending trades | "
+                    f"{wins}W / {losses}L | "
                     f"{still_pending} still pending | {errors} errors"
                 )
             except Exception as e:
-                logger.error(f"[RESOLVER] Supabase batch update failed: {e}")
+                logger.error(f"[RESOLVER] Supabase batch process failed: {e}")
                 errors += len(updates)
                 wins = losses = 0
 

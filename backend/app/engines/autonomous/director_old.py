@@ -85,37 +85,11 @@ class DirectorAgent:
 
         # ── EARLY EXIT: Category Filter (Zero-cost gate) ──────────────────────
         # Applied BEFORE any API calls or Council queries to save tokens & latency.
-        # Updated 2026-03-10: NBA (EV=-0.162, n=234) and Tennis (EV=-0.269, n=75)
-        # added as empirically proven capital destroyers.
-        # Updated 2026-03-11: "up or down", box office, tweets added (audit 48h).
+        # Based on empirical evidence from 38 resolved trades (2026-02-24 to 2026-02-27).
         _esports_kw = [
             "dota 2", "counter-strike", "valorant", "lol:", "league of legends",
             "map 1 winner", "map 2 winner", "map handicap", "esports",
             "astral", "mindfreak", "bounty hunters esports",
-        ]
-        _nba_kw = [
-            "nba", " vs ", " vs. ", "76ers", "sixers", "celtics", "lakers",
-            "warriors", "knicks", "nets", "bucks", "heat", "nuggets", "suns",
-            "clippers", "grizzlies", "thunder", "mavs", "mavericks", "spurs",
-            "rockets", "pistons", "pacers", "hawks", "hornets", "wizards",
-            "magic", "raptors", "cavaliers", "cavs", "timberwolves", "wolves",
-            "jazz", "pelicans", "kings", "blazers", "trail blazers", "okc",
-            "bulls", "basketball", "points scored", "total points",
-        ]
-        _tennis_kw = [
-            "tennis", " atp ", "wta ", "grand slam", "wimbledon", "roland garros",
-            "us open", "australian open", "djokovic", "alcaraz", "sinner",
-            "medvedev", "swiatek", "sabalenka", "zverev", "rublev",
-            "bnp paribas open", "dubai tennis", "indian wells", "miami open",
-            "itf ", "challenger ", "kigali", "antalya",
-        ]
-        _unpredictable_kw = [
-            "up or down", "up/down",
-            "price of bitcoin", "price of ethereum", "price of solana", "price of xrp",
-            "box office", "opening weekend",
-            "mrbeast", "tweets by", "@elonmusk", "elon musk tweet",
-            "spread", "handicap", "over/under", "o/u",
-            "ncaa", "cornhuskers", "boilermakers", "purdue", "nebraska",
         ]
         _price_kw = [
             "close above $", "close below $", "be above $", "be below $",
@@ -125,12 +99,6 @@ class DirectorAgent:
         _excluded_reason = None
         if any(k in q_lower for k in _esports_kw):
             _excluded_reason = "esports_category"
-        elif any(k in q_lower for k in _nba_kw):
-            _excluded_reason = "nba_excluded_ev_negative"
-        elif any(k in q_lower for k in _tennis_kw):
-            _excluded_reason = "tennis_excluded_ev_negative"
-        elif any(k in q_lower for k in _unpredictable_kw):
-            _excluded_reason = "unpredictable_variancy_excluded"
         elif ("win on 2026-" in q_lower
               and "both teams" not in q_lower
               and "o/u" not in q_lower
@@ -629,12 +597,11 @@ class DirectorAgent:
         #   (c) Decision flipped (WOULD_EXECUTE ↔ PAPER_REJECTED)
         # This prevents flooding Supabase with 800+ duplicate rows per session.
         if settings.PAPER_TRADING_MODE:
-            # ── Category Exclusion Filters (Empirically validated 2026-03-10) ──────
-            # NBA: EV=-0.162, n=234 — capital destroyer, excluded 2026-03-10
-            # Tennis: EV=-0.269, n=75 — capital destroyer, excluded 2026-03-10
-            # Up/Down crypto, box office, NCAA spreads: excluded 2026-03-11 (audit 48h)
+            # ── Category Exclusion Filters (Empirically validated 2026-02-27) ──────
+            # Based on 38 resolved trades: certain categories show statistically
+            # negative or zero edge. Excluded to improve signal composition.
 
-            # Group 1: eSports
+            # Group 1: eSports — Council AI lacks domain context. 0-33% accuracy.
             esports_keywords = [
                 "dota 2", "lol:", "league of legends", "counter-strike", "valorant",
                 "esports", "dreamleague", "lck", "vct", "cs2", "cs:go",
@@ -643,37 +610,9 @@ class DirectorAgent:
             ]
             is_esports = any(kw in q_lower for kw in esports_keywords)
 
-            # Group 2: NBA (EV=-0.162, n=234)
-            nba_keywords = [
-                "nba", " vs ", " vs. ", "76ers", "sixers", "celtics", "lakers",
-                "warriors", "knicks", "nets", "bucks", "heat", "nuggets", "suns",
-                "clippers", "grizzlies", "thunder", "mavs", "mavericks", "spurs",
-                "rockets", "pistons", "pacers", "hawks", "hornets", "wizards",
-                "magic", "raptors", "cavaliers", "cavs", "timberwolves", "wolves",
-                "jazz", "pelicans", "kings", "blazers", "okc", "bulls", "basketball",
-            ]
-            is_nba = any(kw in q_lower for kw in nba_keywords)
-
-            # Group 3: Tennis (EV=-0.269, n=75)
-            tennis_keywords = [
-                "tennis", " atp ", "wta ", "grand slam", "wimbledon", "roland garros",
-                "us open", "australian open", "djokovic", "alcaraz", "sinner",
-                "medvedev", "swiatek", "sabalenka", "itf ", "challenger ",
-                "kigali", "antalya", "indian wells", "miami open",
-            ]
-            is_tennis = any(kw in q_lower for kw in tennis_keywords)
-
-            # Group 4: Unpredictable / noise markets (audit 2026-03-11)
-            unpredictable_keywords = [
-                "up or down", "up/down",
-                "price of bitcoin", "price of ethereum", "price of solana",
-                "box office", "opening weekend", "mrbeast", "tweets by",
-                "spread", "handicap", "over/under", "o/u",
-                "ncaa", "cornhuskers", "boilermakers", "purdue", "nebraska",
-            ]
-            is_unpredictable = any(kw in q_lower for kw in unpredictable_keywords)
-
-            # Group 5: Direct football winner
+            # Group 2: Direct football winner ("Will [team] win on [date]?")
+            # Evidence: Parma, Aston Villa, Strasbourg — all LOSS. 0% accuracy.
+            # Note: "Both Teams to Score" markets are KEPT (different signal quality).
             is_football_direct_winner = (
                 "win on 2026-" in q_lower and
                 "both teams" not in q_lower and
@@ -681,23 +620,19 @@ class DirectorAgent:
                 "spread" not in q_lower
             )
 
-            # Group 6: Specific crypto/stock price targets
+            # Group 3: Specific crypto/stock price targets
+            # Evidence: NVIDIA >$180 (0/4), Bitcoin between $X–$Y (0/1).
+            # "Bitcoin Up or Down" (binary, no price target) is KEPT — good signal.
             is_specific_price_target = any(kw in q_lower for kw in [
                 "close above $", "close below $", "close at $",
                 "be above $", "be below $", "be between $",
                 "above $180", "above $66,000", "above $100,000",
                 "nvda", "nvidia", "share price", "stock price",
             ])
-
+            
             excluded_reason = None
             if is_esports:
                 excluded_reason = "esports_filter"
-            elif is_nba:
-                excluded_reason = "nba_excluded_ev_negative"
-            elif is_tennis:
-                excluded_reason = "tennis_excluded_ev_negative"
-            elif is_unpredictable:
-                excluded_reason = "unpredictable_variancy_excluded"
             elif is_football_direct_winner:
                 excluded_reason = "football_direct_winner_filter"
             elif is_specific_price_target:
