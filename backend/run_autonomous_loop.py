@@ -291,9 +291,37 @@ class OutcomeResolver:
                     api_end_date = data.get("endDate")
 
                     if resolved_price is None:
+                        # If market is closed but API gives no resolution price,
+                        # mark as UNRESOLVABLE to stop re-checking forever.
+                        # This does NOT count as WIN or LOSS — data integrity preserved.
+                        if is_closed:
+                            updates.append({"id": row_id, "correct": "UNRESOLVABLE"})
+                            logger.debug(f"[RESOLVER] Market {market_id} closed but no price — marking UNRESOLVABLE")
+                            errors += 1
+                            continue
                         if api_end_date and row.get("end_date_iso") is None:
                             updates.append({"id": row_id, "correct": "PENDING", "end_date_iso": api_end_date})
                         still_pending += 1
+                        continue
+
+                    # Check if endDate has passed by >48h — oracle may never have set closed=true
+                    # If the price is still in dead zone (not 0.98/0.02), this market won't resolve.
+                    _end = row.get("end_date_iso") or api_end_date
+                    _expired_48h = False
+                    if _end:
+                        try:
+                            _end_dt = datetime.fromisoformat(str(_end).replace("Z", "+00:00"))
+                            _expired_48h = (datetime.now(timezone.utc) - _end_dt).total_seconds() > 48 * 3600
+                        except Exception:
+                            pass
+                    
+                    if _expired_48h and self.LOSS_THRESHOLD < resolved_price < self.WIN_THRESHOLD:
+                        updates.append({"id": row_id, "correct": "UNRESOLVABLE"})
+                        logger.debug(
+                            f"[RESOLVER] Market {market_id} expired >48h ago, price={resolved_price:.2f} "
+                            f"(dead zone) — marking UNRESOLVABLE"
+                        )
+                        errors += 1
                         continue
 
                     # Determine WIN/LOSS respecting the traded side (YES or NO)
@@ -403,9 +431,22 @@ async def autonomous_loop():
 
             # ── Step 0: Outcome Resolver ──────────────────────────────────────
             # Resolves PENDING trades to WIN/LOSS by checking Gamma API prices.
-            # Runs every cycle but only processes trades older than 2h in batches of 20.
+            # Runs every cycle but only processes trades older than 2h in batches of 100.
             try:
                 resolver_result = await resolver.resolve_pending()
+                # Show cumulative trial scoreboard from Supabase
+                try:
+                    _sb = resolver._get_supabase()
+                    _totals = _sb.table("autonomous_logs").select("correct").in_("correct", ["WIN", "LOSS", "PENDING"]).eq("decision", "WOULD_EXECUTE").execute().data
+                    _total_w = sum(1 for r in _totals if r["correct"] == "WIN")
+                    _total_l = sum(1 for r in _totals if r["correct"] == "LOSS")
+                    _total_p = sum(1 for r in _totals if r["correct"] == "PENDING")
+                    _total_resolved = _total_w + _total_l
+                    _accuracy = f"{_total_w / _total_resolved * 100:.1f}%" if _total_resolved > 0 else "N/A"
+                    _scoreboard = f"SCOREBOARD: {_total_w}W / {_total_l}L ({_accuracy}) | {_total_p} pending"
+                except Exception:
+                    _scoreboard = ""
+
                 if resolver_result["checked"] > 0:
                     logger.info(
                         f"Step 0: Resolver checked {resolver_result['checked']} trades → "
@@ -414,6 +455,8 @@ async def autonomous_loop():
                     )
                 else:
                     logger.debug("Step 0: Resolver — no PENDING trades to process.")
+                if _scoreboard:
+                    logger.info(f"Step 0: {_scoreboard}")
             except Exception as resolver_e:
                 logger.error(f"Step 0: Resolver error (non-fatal): {resolver_e}")
 
