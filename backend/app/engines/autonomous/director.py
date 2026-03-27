@@ -292,18 +292,18 @@ class DirectorAgent:
                                 return {"status": "skipped", "reason": "market_expired"}
 
                             max_duration_secs = settings.AUTONOMOUS_MAX_MARKET_DURATION_HOURS * 3600
-                            # DISABLED FOR TESTING: Strict max duration Filter
-                            # if time_to_end.total_seconds() > max_duration_secs:
-                            #     logger.info(f"Director: Skipping long-term market '{question}' (Ends in {time_to_end.days} days). Limit is {settings.AUTONOMOUS_MAX_MARKET_DURATION_HOURS}h.")
-                            #     return {"status": "skipped", "reason": "long_term_market_gt_limit"}
+                            if time_to_end.total_seconds() > max_duration_secs:
+                                logger.info(f"Director: Skipping long-term market '{question}' (Ends in {time_to_end.days} days). Limit is {settings.AUTONOMOUS_MAX_MARKET_DURATION_HOURS}h.")
+                                return {"status": "skipped", "reason": "long_term_market_gt_limit"}
                             
                             logger.info(f"Director: Proceeding with market: '{question}' (Ends in {time_to_end})")
                             
                         except Exception as e:
                             logger.warning(f"Director: Date parsing failed for {end_date_iso}: {e}")
                     else:
-                        # Fallback: Si no hay fecha, asumimos que no ha terminado pero no es 'imminent'
-                        logger.info(f"Director: No end date found for '{question}'. Proceeding with caution.")
+                        # Sin fecha de cierre conocida — rechazar para evitar mercados indefinidos
+                        logger.info(f"Director: Skipping market without end_date_iso: '{question[:50]}'")
+                        return {"status": "skipped", "reason": "no_end_date"}
 
                     logger.debug(f"Director: Hydrated data. Canonical ID: {market_id}")
                     
@@ -514,6 +514,11 @@ class DirectorAgent:
             logger.critical(f"Director: OVERRIDING COUNCIL with ARBITRAGE SIGNAL: {arbitrage_signal}")
             score = arbitrage_score
             required_confidence = 0.5 # Force pass if signal is strong
+        
+        # Apply Confidence Max Cap for sizing and safety
+        if score > settings.AUTONOMOUS_CONFIDENCE_MAX:
+             logger.debug(f"Director: Capping score {score:.3f} to {settings.AUTONOMOUS_CONFIDENCE_MAX} (AUTONOMOUS_CONFIDENCE_MAX)")
+             score = settings.AUTONOMOUS_CONFIDENCE_MAX
 
         # ── NoFolio Sentiment Engine ──────────────────────────────────────────
         # Exploit "Optimism Bias": humans systematically overvalue YES.

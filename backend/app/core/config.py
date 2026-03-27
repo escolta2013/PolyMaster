@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     AUTONOMOUS_USER_ID: Optional[str] = None  # The UUID of the "System Proxy Wallet"
     AUTONOMOUS_MAX_SIZE: float = 50.0  # Max exposure per auto-trade
     AUTONOMOUS_MAX_MARKET_DURATION_HOURS: int = 72 # Skip markets ending > 72h from now
+    AUTONOMOUS_CONFIDENCE_MAX: float = 0.95        # Cap for score in Kelly-like sizing
     AUTONOMOUS_MIN_WALLETS: int = 2 # Min wallets to trigger a cluster alert
     
     # Paper Trading Mode (Calibration Phase)
