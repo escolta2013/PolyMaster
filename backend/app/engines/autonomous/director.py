@@ -86,8 +86,9 @@ class DirectorAgent:
         # ── EARLY EXIT: Category Filter (Zero-cost gate) ──────────────────────
         # Applied BEFORE any API calls or Council queries to save tokens & latency.
         # Updated 2026-03-10: NBA (EV=-0.162, n=234) and Tennis (EV=-0.269, n=75)
-        # added as empirically proven capital destroyers.
         # Updated 2026-03-11: "up or down", box office, tweets added (audit 48h).
+        # Updated 2026-03-30: reach $, hit $, market cap, fdv, exact temperature
+        #   added after Supabase monitoring revealed filter escapes.
         _esports_kw = [
             "dota 2", "counter-strike", "valorant", "lol:", "league of legends",
             "map 1 winner", "map 2 winner", "map handicap", "esports",
@@ -116,12 +117,29 @@ class DirectorAgent:
             "mrbeast", "tweets by", "@elonmusk", "elon musk tweet",
             "spread", "handicap", "over/under", "o/u",
             "ncaa", "cornhuskers", "boilermakers", "purdue", "nebraska",
+            # Price target verbs (2026-03-30) — catch "reach $", "hit $", etc.
+            "reach $", "hit $", "exceed $", "surpass $", "cross $",
+            # Crypto market cap / FDV markets (2026-03-30)
+            "market cap", " fdv", ">$", "one day after launch",
         ]
         _price_kw = [
             "close above $", "close below $", "be above $", "be below $",
             "be between $", "nvidia", "nvda", "share price", "stock price",
             "above $180", "above $66,000", "above $100,000",
         ]
+        # Exact temperature markets (2026-03-30): "be X°C on" / "be X°F on"
+        # Council cannot predict exact degrees — only ranges have edge.
+        # Exception: markets with "between" (range) are kept.
+        import re as _re
+        _is_exact_temp = (
+            bool(_re.search(r'be \d+°[cf] (on|in)', q_lower)) and
+            "between" not in q_lower and
+            "above" not in q_lower and
+            "below" not in q_lower and
+            "or below" not in q_lower and
+            "or above" not in q_lower
+        )
+
         _excluded_reason = None
         if any(k in q_lower for k in _esports_kw):
             _excluded_reason = "esports_category"
@@ -131,6 +149,8 @@ class DirectorAgent:
             _excluded_reason = "tennis_excluded_ev_negative"
         elif any(k in q_lower for k in _unpredictable_kw):
             _excluded_reason = "unpredictable_variancy_excluded"
+        elif _is_exact_temp:
+            _excluded_reason = "exact_temperature_excluded"
         elif ("win on 2026-" in q_lower
               and "both teams" not in q_lower
               and "o/u" not in q_lower
@@ -216,12 +236,12 @@ class DirectorAgent:
             recent_trade = supabase.table("autonomous_logs") \
                 .select("id") \
                 .eq("market_id", market_id) \
-                .eq("decision", "EXECUTED") \
+                .in_("decision", ["EXECUTED", "WOULD_EXECUTE"]) \
                 .gte("detected_at", (datetime.now(timezone.utc) - timedelta(hours=12)).isoformat()) \
                 .execute()
             
             if recent_trade.data:
-                logger.info(f"Director: Skipping {market_id} - Already executed in the last 12 hours.")
+                logger.info(f"Director: Skipping {market_id} - Already logged in the last 12 hours.")
                 return {"status": "skipped", "reason": "already_executed_recently"}
         except Exception as e:
             logger.warning(f"Director: Could not check trade history: {e}")
@@ -465,55 +485,12 @@ class DirectorAgent:
             except Exception as e:
                 logger.warning(f"Director: Could not parse end_date '{end_date_str}': {e}")
 
-        # C. CRYPTO ARBITRAGE CHECK (Lag Exploit)
-        # If this is a crypto price market, check Binance feed
-        arbitrage_signal = None
-        arbitrage_score = 0.0
-        
-        try:
-            from app.engines.intelligence.crypto_feed import CryptoFeed
-            
-            # Simple regex to identify price targets: "Will Bitcoin hit $100,000?"
-            # We look for "Bitcoin", "Ethereum", "Solana"
-            target_symbol = None
-            if "bitcoin" in q_lower or "btc" in q_lower: target_symbol = "BTC"
-            elif "ethereum" in q_lower or "eth" in q_lower: target_symbol = "ETH"
-            elif "solana" in q_lower or "sol" in q_lower: target_symbol = "SOL"
-            
-            if target_symbol:
-                binance_price = await CryptoFeed.get_price(target_symbol)
-                
-                if binance_price:
-                    # Extract target price from question (e.g., $100,000)
-                    # Look for $ followed by numbers, maybe with commas
-                    price_match = re.search(r'\$\s?([\d,]+)', question)
-                    if price_match:
-                        target_price = float(price_match.group(1).replace(",", ""))
-                        
-                        logger.info(f"Director: Arbitrage Check for {target_symbol}. Real: ${binance_price:,.2f} vs Target: ${target_price:,.2f}")
-                        
-                        # LOGIC:
-                        # If Question is "Will BTC hit X?" (YES/NO) and Price > X -> YES is 100%
-                        # We need to be careful about "by date" but assuming "hit" means "touch"
-                        
-                        if "above" in q_lower or "hit" in q_lower or ">" in q_lower:
-                            if binance_price > target_price * 1.001: # 0.1% buffer
-                                logger.warning(f"Director: ARBITRAGE SIGNAL! {target_symbol} (${binance_price}) is ALREADY above ${target_price}")
-                                arbitrage_signal = "BUY_YES"
-                                arbitrage_score = 0.99
-                            elif binance_price < target_price * 0.999 and "below" in q_lower:
-                                # This handles "Will it fall below?"
-                                pass
-                                
-        except Exception as e:
-            logger.error(f"Director: Arbitrage check failed: {e}")
-
         logger.info(f"Director: Council Score: {score:.2f} (Threshold: {required_confidence})")
-        
-        if arbitrage_signal:
-            logger.critical(f"Director: OVERRIDING COUNCIL with ARBITRAGE SIGNAL: {arbitrage_signal}")
-            score = arbitrage_score
-            required_confidence = 0.5 # Force pass if signal is strong
+
+        # NOTE: CRYPTO ARBITRAGE CHECK block removed 2026-03-30.
+        # It was assigning council_score=0.99 (catastrophic zone, EV=-0.584)
+        # and overriding the Council without empirical validation.
+        # Crypto price markets are now blocked by early exit filters.
         
         # Apply Confidence Max Cap for sizing and safety
         if score > settings.AUTONOMOUS_CONFIDENCE_MAX:
@@ -531,8 +508,7 @@ class DirectorAgent:
         
         if (settings.ENABLE_NOFOLIO and
             score < settings.NOFOLIO_MAX_AI_SCORE and
-            current_price > settings.NOFOLIO_MIN_MARKET_PRICE and
-            not arbitrage_signal):
+            current_price > settings.NOFOLIO_MIN_MARKET_PRICE):
             
             # Locate the NO token for this market
             try:
