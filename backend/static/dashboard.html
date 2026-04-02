@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PolyMaster Terminal</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+
+  :root {
+    --green: #00ff41;
+    --green-dim: #00cc33;
+    --green-dark: #003300;
+    --green-glow: rgba(0,255,65,0.15);
+    --amber: #ffb000;
+    --red: #ff3333;
+    --bg: #0a0a0a;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--green);
+    font-family: 'Share Tech Mono', 'Courier New', monospace;
+    font-size: 13px;
+    line-height: 1.4;
+    padding: 8px;
+    min-height: 100vh;
+    overflow-x: hidden;
+    /* CRT scanline overlay */
+    background-image: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.08) 2px,
+      rgba(0,0,0,0.08) 4px
+    );
+  }
+
+  /* CRT flicker animation */
+  body::after {
+    content: '';
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(0,255,65,0.01);
+    pointer-events: none;
+    animation: flicker 8s infinite;
+    z-index: 9999;
+  }
+
+  @keyframes flicker {
+    0%,100% { opacity: 1; }
+    92% { opacity: 1; }
+    93% { opacity: 0.85; }
+    94% { opacity: 1; }
+    96% { opacity: 0.9; }
+    97% { opacity: 1; }
+  }
+
+  .screen {
+    max-width: 1100px;
+    margin: 0 auto;
+    text-shadow: 0 0 5px var(--green);
+  }
+
+  /* ── Header bar ── */
+  .header {
+    border: 1px solid var(--green-dim);
+    padding: 4px 8px;
+    margin-bottom: 6px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--green-dark);
+    box-shadow: 0 0 10px var(--green-glow);
+  }
+
+  .header-title { font-size: 15px; letter-spacing: 2px; }
+  .header-right { font-size: 11px; color: var(--green-dim); }
+
+  .status-dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    margin-right: 6px;
+    animation: pulse 1.5s infinite;
+  }
+  .status-dot.online { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .status-dot.offline { background: var(--red); animation: none; }
+
+  @keyframes pulse {
+    0%,100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  /* ── Grid layout ── */
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 6px;
+    margin-bottom: 6px;
+  }
+
+  .panel {
+    border: 1px solid var(--green-dim);
+    padding: 6px 8px;
+    box-shadow: inset 0 0 8px var(--green-glow);
+  }
+
+  .panel-title {
+    border-bottom: 1px solid var(--green-dim);
+    margin-bottom: 6px;
+    padding-bottom: 3px;
+    font-size: 11px;
+    letter-spacing: 3px;
+    color: var(--green-dim);
+  }
+
+  .kv { display: flex; justify-content: space-between; margin-bottom: 3px; }
+  .kv-key { color: var(--green-dim); }
+  .kv-val { color: var(--green); }
+  .kv-val.warn { color: var(--amber); text-shadow: 0 0 5px var(--amber); }
+  .kv-val.danger { color: var(--red); text-shadow: 0 0 5px var(--red); }
+  .kv-val.ok { color: var(--green); }
+
+  /* ── Trades panel ── */
+  .trade-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 3px;
+    font-size: 12px;
+  }
+
+  .trade-badge {
+    padding: 0 4px;
+    font-size: 10px;
+    font-weight: bold;
+    letter-spacing: 1px;
+  }
+  .badge-exec { color: var(--green); border: 1px solid var(--green); }
+  .badge-rej { color: var(--red); border: 1px solid var(--red); }
+  .badge-win { color: #00ffff; border: 1px solid #00ffff; }
+  .badge-loss { color: var(--red); border: 1px solid var(--red); }
+  .badge-pend { color: var(--amber); border: 1px solid var(--amber); }
+
+  .trade-market { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--green-dim); }
+  .trade-score { color: var(--green-dim); font-size: 11px; }
+
+  /* ── Log panel ── */
+  .log-area {
+    border: 1px solid var(--green-dim);
+    padding: 6px 8px;
+    height: 220px;
+    overflow-y: auto;
+    box-shadow: inset 0 0 8px var(--green-glow);
+  }
+
+  .log-title {
+    font-size: 11px;
+    letter-spacing: 3px;
+    color: var(--green-dim);
+    margin-bottom: 6px;
+    border-bottom: 1px solid var(--green-dim);
+    padding-bottom: 3px;
+  }
+
+  .log-line {
+    font-size: 11px;
+    line-height: 1.6;
+    color: var(--green-dim);
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+
+  .log-line.is-exec { color: var(--green); }
+  .log-line.is-err  { color: var(--red); }
+  .log-line.is-warn { color: var(--amber); }
+  .log-line.is-success { color: #00ffff; }
+
+  /* scrollbar */
+  .log-area::-webkit-scrollbar { width: 6px; }
+  .log-area::-webkit-scrollbar-track { background: #000; }
+  .log-area::-webkit-scrollbar-thumb { background: var(--green-dark); }
+
+  /* ── Footer ── */
+  .footer {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    color: var(--green-dark);
+    border-top: 1px solid var(--green-dark);
+    padding-top: 4px;
+    margin-top: 4px;
+  }
+
+  /* ── Blinking cursor ── */
+  .cursor::after {
+    content: '█';
+    animation: blink 1s step-end infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* ── P&L coloring ── */
+  .pnl-pos { color: var(--green); }
+  .pnl-neg { color: var(--red); text-shadow: 0 0 5px var(--red); }
+
+  /* Progress bar */
+  .bar-track { background: var(--green-dark); height: 8px; margin-top: 3px; }
+  .bar-fill { height: 8px; background: var(--green); transition: width 0.5s; }
+  .bar-fill.warn { background: var(--amber); }
+  .bar-fill.danger { background: var(--red); }
+
+  .section-divider {
+    border: none;
+    border-top: 1px dashed var(--green-dark);
+    margin: 4px 0;
+  }
+
+  #error-overlay {
+    display: none;
+    position: fixed;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    border: 2px solid var(--red);
+    background: #0a0000;
+    padding: 20px 40px;
+    color: var(--red);
+    text-shadow: 0 0 8px var(--red);
+    text-align: center;
+    z-index: 10000;
+  }
+</style>
+</head>
+<body>
+<div class="screen">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-title">
+      <span class="status-dot" id="status-dot"></span>
+      POLYMASTER v2.0 &nbsp;|&nbsp; AUTONOMOUS TRADING ENGINE
+    </div>
+    <div class="header-right">
+      <span id="clock">--:--:-- ET</span> &nbsp;|&nbsp;
+      MODE: <span id="mode-badge">--</span> &nbsp;|&nbsp;
+      UPTIME: <span id="uptime">--</span>
+    </div>
+  </div>
+
+  <!-- Top grid: System | Trades | Council -->
+  <div class="grid">
+
+    <!-- Panel 1: System Status -->
+    <div class="panel">
+      <div class="panel-title">[ SYSTEM STATUS ]</div>
+      <div class="kv"><span class="kv-key">BOT STATE</span>       <span class="kv-val" id="bot-state">--</span></div>
+      <div class="kv"><span class="kv-key">SIMULATION</span>      <span class="kv-val" id="sim-mode">--</span></div>
+      <div class="kv"><span class="kv-key">TRADES TODAY</span>    <span class="kv-val" id="trades-today">--</span></div>
+      <div class="kv"><span class="kv-key">BUDGET USED</span>     <span class="kv-val" id="budget-used">--</span></div>
+      <div class="kv"><span class="kv-key">BUDGET LIMIT</span>    <span class="kv-val" id="budget-limit">--</span></div>
+      <div class="bar-track"><div class="bar-fill" id="budget-bar" style="width:0%"></div></div>
+      <hr class="section-divider">
+      <div class="kv"><span class="kv-key">WIN / LOSS</span>      <span class="kv-val" id="win-loss">-- / --</span></div>
+      <div class="kv"><span class="kv-key">ACCURACY</span>        <span class="kv-val" id="accuracy">--</span></div>
+      <div class="kv"><span class="kv-key">P&amp;L (SIM)</span>  <span class="kv-val" id="pnl">--</span></div>
+    </div>
+
+    <!-- Panel 2: Recent Trades -->
+    <div class="panel">
+      <div class="panel-title">[ RECENT TRADES ]</div>
+      <div id="trades-list">
+        <div class="trade-row" style="color:var(--green-dark)">Loading...</div>
+      </div>
+    </div>
+
+    <!-- Panel 3: Council Stats -->
+    <div class="panel">
+      <div class="panel-title">[ COUNCIL STATS ]</div>
+      <div class="kv"><span class="kv-key">CALLS TODAY</span>     <span class="kv-val" id="council-calls">--</span></div>
+      <div class="kv"><span class="kv-key">DAILY BUDGET</span>    <span class="kv-val" id="council-budget">--</span></div>
+      <div class="bar-track"><div class="bar-fill" id="council-bar" style="width:0%"></div></div>
+      <div class="kv" style="margin-top:4px"><span class="kv-key">CACHE HITS</span>      <span class="kv-val" id="cache-hits">--</span></div>
+      <div class="kv"><span class="kv-key">MKTS CACHED</span>    <span class="kv-val" id="cached-markets">--</span></div>
+      <div class="kv"><span class="kv-key">TOKENS SAVED</span>   <span class="kv-val" id="tokens-saved">--</span></div>
+      <div class="kv"><span class="kv-key">COST SAVED</span>     <span class="kv-val" id="cost-saved">--</span></div>
+      <hr class="section-divider">
+      <div class="kv"><span class="kv-key">THRESHOLD</span>      <span class="kv-val" id="threshold">--</span></div>
+      <div class="kv"><span class="kv-key">MAX SIZE</span>       <span class="kv-val" id="max-size">--</span></div>
+      <div class="kv"><span class="kv-key">CYCLE</span>          <span class="kv-val" id="cycle">--</span></div>
+    </div>
+
+  </div>
+
+  <!-- Live Log -->
+  <div class="log-area" id="log-area">
+    <div class="log-title">[ LIVE LOG STREAM ] <span class="cursor"></span></div>
+    <div id="log-lines">
+      <div class="log-line" style="color:var(--green-dark)">Connecting to engine...</div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    <span>POLYMASTER ENGINE &copy; 2026 &nbsp;|&nbsp; SUPABASE: CONNECTED</span>
+    <span>REFRESH: <span id="next-refresh">5</span>s &nbsp;|&nbsp; Ctrl+C to exit</span>
+  </div>
+
+</div>
+
+<div id="error-overlay">
+  <div style="font-size:20px;margin-bottom:10px;">⚠ CONNECTION ERROR</div>
+  <div id="error-msg">Cannot reach API server.</div>
+  <div style="margin-top:10px;font-size:11px;">Retrying in <span id="retry-countdown">10</span>s</div>
+</div>
+
+<script>
+const API = window.location.origin;
+let consecutiveErrors = 0;
+let refreshCountdown = 5;
+
+// ── Clock ──
+function updateClock() {
+  const et = new Date().toLocaleString('en-US', { timeZone: 'America/New_York', hour12: false,
+    hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  document.getElementById('clock').textContent = et + ' ET';
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ── Countdown ──
+function tickRefresh() {
+  refreshCountdown--;
+  const el = document.getElementById('next-refresh');
+  if (el) el.textContent = refreshCountdown;
+  if (refreshCountdown <= 0) { refreshCountdown = 5; fetchStatus(); }
+}
+setInterval(tickRefresh, 1000);
+
+// ── Helpers ──
+function colorClass(text) {
+  const t = (text || '').toLowerCase();
+  if (/execut|success|win|placed/.test(t)) return 'is-exec';
+  if (/error|critical|fail|exception/.test(t)) return 'is-err';
+  if (/warn|reject|skip/.test(t)) return 'is-warn';
+  if (/score|council|cluster/.test(t)) return 'is-success';
+  return '';
+}
+
+function pnlColor(val) {
+  if (val === null || val === undefined) return '';
+  return parseFloat(val) >= 0 ? 'pnl-pos' : 'pnl-neg';
+}
+
+function setBar(id, pct, thresholdWarn=70, thresholdDanger=90) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.style.width = Math.min(pct, 100) + '%';
+  el.className = 'bar-fill';
+  if (pct >= thresholdDanger) el.classList.add('danger');
+  else if (pct >= thresholdWarn) el.classList.add('warn');
+}
+
+function badgeHTML(decision, correct) {
+  const d = (decision || '').toUpperCase();
+  const c = (correct || '').toUpperCase();
+  if (c === 'WIN')  return '<span class="trade-badge badge-win">WIN</span>';
+  if (c === 'LOSS') return '<span class="trade-badge badge-loss">LOSS</span>';
+  if (d === 'EXECUTED' || d === 'WOULD_EXECUTE') return '<span class="trade-badge badge-exec">EXEC</span>';
+  if (d === 'REJECTED' || d === 'SKIPPED') return '<span class="trade-badge badge-rej">REJ</span>';
+  return '<span class="trade-badge badge-pend">PEND</span>';
+}
+
+// ── Main fetch ──
+async function fetchStatus() {
+  try {
+    const res = await fetch(`${API}/api/status`, { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const d = await res.json();
+    consecutiveErrors = 0;
+    document.getElementById('error-overlay').style.display = 'none';
+
+    // Status dot + bot state
+    const dot = document.getElementById('status-dot');
+    const running = d.bot_running;
+    dot.className = 'status-dot ' + (running ? 'online' : 'offline');
+    const stateEl = document.getElementById('bot-state');
+    stateEl.textContent = running ? 'RUNNING' : 'STOPPED';
+    stateEl.className = 'kv-val ' + (running ? 'ok' : 'danger');
+
+    // Mode
+    const simEl = document.getElementById('sim-mode');
+    const isSim = d.simulation_mode;
+    simEl.textContent = isSim ? 'SIMULATION' : 'REAL MONEY 🔴';
+    simEl.className = 'kv-val ' + (isSim ? 'warn' : 'danger');
+    document.getElementById('mode-badge').textContent = isSim ? 'SIM' : 'LIVE';
+
+    // Uptime
+    const secs = d.uptime_seconds || 0;
+    const h = Math.floor(secs/3600), m = Math.floor((secs%3600)/60), s = secs%60;
+    document.getElementById('uptime').textContent = `${h}h ${m}m ${s}s`;
+
+    // Budget
+    document.getElementById('trades-today').textContent = d.trades_today ?? '--';
+    const spent = d.budget_spent_today ?? 0;
+    const limit = d.budget_daily_limit ?? 100;
+    document.getElementById('budget-used').textContent = `$${spent.toFixed(2)}`;
+    document.getElementById('budget-limit').textContent = `$${limit.toFixed(2)}`;
+    setBar('budget-bar', (spent / limit) * 100);
+
+    // Win/Loss/Accuracy
+    const wins = d.wins_total ?? 0, losses = d.losses_total ?? 0;
+    document.getElementById('win-loss').textContent = `${wins} / ${losses}`;
+    const resolved = wins + losses;
+    document.getElementById('accuracy').textContent = resolved > 0
+      ? `${(wins/resolved*100).toFixed(1)}%` : 'N/A';
+
+    // P&L
+    const pnl = d.pnl_usdc;
+    const pnlEl = document.getElementById('pnl');
+    if (pnl !== undefined && pnl !== null) {
+      pnlEl.textContent = (pnl >= 0 ? '+' : '') + `$${pnl.toFixed(2)}`;
+      pnlEl.className = 'kv-val ' + pnlColor(pnl);
+    }
+
+    // Council
+    const calls = d.council_calls_today ?? 0;
+    const budget = d.council_budget ?? 300;
+    document.getElementById('council-calls').textContent = `${calls}`;
+    document.getElementById('council-budget').textContent = `${budget}`;
+    const councilPct = (calls / budget) * 100;
+    setBar('council-bar', councilPct);
+
+    const cacheEl = document.getElementById('council-calls');
+    if (councilPct > 90) cacheEl.className = 'kv-val danger';
+    else if (councilPct > 70) cacheEl.className = 'kv-val warn';
+    else cacheEl.className = 'kv-val ok';
+
+    document.getElementById('cache-hits').textContent = d.cache_hit_rate ?? '--';
+    document.getElementById('cached-markets').textContent = d.cached_markets ?? '--';
+    document.getElementById('tokens-saved').textContent = d.tokens_saved ?? '--';
+    document.getElementById('cost-saved').textContent = d.cost_saved ?? '--';
+    document.getElementById('threshold').textContent = d.confidence_threshold ?? '--';
+    document.getElementById('max-size').textContent = d.max_size_usdc ? `$${d.max_size_usdc}` : '--';
+    document.getElementById('cycle').textContent = d.cycle_count ?? '--';
+
+    // Trades list
+    const trades = d.recent_trades || [];
+    const tl = document.getElementById('trades-list');
+    if (trades.length === 0) {
+      tl.innerHTML = '<div class="trade-row" style="color:var(--green-dark)">No trades yet.</div>';
+    } else {
+      tl.innerHTML = trades.slice(0, 8).map(t => {
+        const q = (t.market_question || t.market_id || '?').substring(0, 38);
+        const score = t.council_score ? t.council_score.toFixed(2) : '?';
+        return `<div class="trade-row">
+          ${badgeHTML(t.decision, t.correct)}
+          <span class="trade-market" title="${t.market_question || ''}">${q}</span>
+          <span class="trade-score">${score}</span>
+        </div>`;
+      }).join('');
+    }
+
+    // Refresh logs too
+    fetchLogs();
+
+  } catch(e) {
+    consecutiveErrors++;
+    if (consecutiveErrors >= 2) {
+      const ov = document.getElementById('error-overlay');
+      ov.style.display = 'block';
+      document.getElementById('error-msg').textContent = e.message;
+      document.getElementById('status-dot').className = 'status-dot offline';
+      document.getElementById('bot-state').textContent = 'UNREACHABLE';
+      // Retry countdown
+      let cnt = 10;
+      const intv = setInterval(() => {
+        cnt--; document.getElementById('retry-countdown').textContent = cnt;
+        if (cnt <= 0) { clearInterval(intv); fetchStatus(); }
+      }, 1000);
+    }
+  }
+  refreshCountdown = 5;
+}
+
+// ── Log fetch ──
+let lastLogTs = null;
+async function fetchLogs() {
+  try {
+    const res = await fetch(`${API}/api/logs/recent`, { signal: AbortSignal.timeout(4000) });
+    if (!res.ok) return;
+    const d = await res.json();
+    const lines = d.lines || [];
+    const container = document.getElementById('log-lines');
+    if (lines.length === 0) return;
+    container.innerHTML = lines.map(l => {
+      const cls = colorClass(l);
+      return `<div class="log-line ${cls}">${escapeHtml(l)}</div>`;
+    }).join('');
+    // Auto-scroll to bottom
+    const area = document.getElementById('log-area');
+    area.scrollTop = area.scrollHeight;
+  } catch(e) { /* non-fatal */ }
+}
+
+function escapeHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// Initial load
+fetchStatus();
+</script>
+</body>
+</html>

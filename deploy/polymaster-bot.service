@@ -1,0 +1,17 @@
+[Unit]
+Description=PolyMaster Autonomous Trading Bot
+After=network.target polymaster-api.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/PolyMaster
+EnvironmentFile=/home/ubuntu/PolyMaster/backend/.env
+ExecStart=/home/ubuntu/PolyMaster/backend/.venv/bin/python run_autonomous_loop.py
+Restart=always
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

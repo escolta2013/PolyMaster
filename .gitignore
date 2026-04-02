@@ -1,42 +1,39 @@
-# Environment variables
+# ── Secrets (NEVER commit) ──
 .env
 *.env
 .env.*
+.env.local
 
-# Dependencies
-node_modules/
+# ── Python environment ──
+.venv/
 venv/
 env/
-.venv/
-
-# Build outputs
-.next/
-dist/
-build/
-out/
-
-# Python
+ENV/
 __pycache__/
 *.py[cod]
 *$py.class
 .pytest_cache/
+*.egg-info/
 
-# OS files
+# ── Logs (generated at runtime, not tracked) ──
+*.log
+backend/logs/
+logs/
+
+# ── Build outputs ──
+.next/
+dist/
+build/
+out/
+node_modules/
+
+# ── OS files ──
 .DS_Store
 Thumbs.db
 
-# Logs and results
-*.txt
-*.log
-test_auth_result.txt
-test_comp_result.txt
-final_diag_result.txt
-final_check_result.txt
-debug_trades_result.txt
-data_trades_result.txt
-auth_derivation_result.txt
-auth_discovery_result.txt
-raw_sampling.txt
-whale_demo_result.txt
-inspect_result.txt
+# ── IDE ──
+.vscode/
+.idea/
+
+# ── Agent internal ──
 .agent/skills/

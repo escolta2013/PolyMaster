@@ -1,111 +1,119 @@
-from aiogram import Bot, Dispatcher, types
-from aiogram.filters import Command
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+"""
+Telegram Notification Service (Personal Bot Mode)
+--------------------------------------------------
+Sends one-way push notifications to the admin chat.
+No multi-user SaaS logic — this is a personal trading bot.
+
+Events notified:
+  - Bot start / stop
+  - Trade executed
+  - Trade rejected (high-value rejections only)
+  - Trade resolved (WIN / LOSS)
+  - Stop-loss triggered
+  - Council budget warning (>90%)
+  - Critical loop errors
+"""
+
+import html
+import asyncio
+from typing import Optional
 from app.core.config import settings
 from app.core.logging import logger
-import asyncio
 
-class TelegramService:
+
+class TelegramNotifier:
     """
-    Service to manage the Telegram Bot and Signal publishing.
+    Thin wrapper around the Telegram Bot API (via aiogram).
+    Sends plain text messages to TELEGRAM_ADMIN_CHAT_ID.
     """
+
     def __init__(self):
-        self.bot = Bot(token=settings.TELEGRAM_BOT_TOKEN) if settings.TELEGRAM_BOT_TOKEN else None
-        self.dp = Dispatcher()
-        self._setup_handlers()
+        self._bot = None
+        self._chat_id: Optional[str] = settings.TELEGRAM_ADMIN_CHAT_ID or None
 
-    def _setup_handlers(self):
-        @self.dp.message(Command("start"))
-        async def cmd_start(message: types.Message):
-            await message.answer(
-                "🛡️ **PolyMaster Signal Gateway**\n\n"
-                "Welcome to the institutional trading bridge. I'll pass you real-time signals from the Tracker Engine.\n\n"
-                "Use /status to check your connected proxy wallet.",
-                parse_mode="Markdown"
-            )
-
-        @self.dp.message(Command("status"))
-        async def cmd_status(message: types.Message):
-            # In a real scenario, we'd map Telegram ID to User ID
-            await message.answer("🔍 Fetching your account status...")
-
-        @self.dp.callback_query(lambda c: c.data and c.data.startswith("copy_"))
-        async def process_copy_trade(callback_query: types.CallbackQuery):
-            # Format: copy_{market_id}_{token_id}_{outcome}_{price}
-            _, m_id, t_id, outcome, price = callback_query.data.split("_")
-            
-            await callback_query.message.edit_text(f"⏳ Executing Copy Trade for {outcome}...")
-            
-            # TODO: Pull real userId mapped to telegram ID
-            from app.engines.tracker.copy_executor import CopyExecutor, CopyTradeRequest
-            executor = CopyExecutor()
-            
-            req = CopyTradeRequest(
-                user_id="default-user-id", # Placeholder
-                source_wallet="Telegram-Signal",
-                token_id=t_id,
-                market_id=m_id,
-                market_question="Market from Telegram",
-                outcome=outcome,
-                price=float(price),
-                size_usdc=settings.MIN_ORDER_SIZE_USD / 5 # Arbitrary small size for 1-tap
-            )
-            
+        if settings.TELEGRAM_BOT_TOKEN and self._chat_id:
             try:
-                result = await executor.execute_copy(req)
-                if result.status in ["success", "simulated"]:
-                    icon = "✅" if result.status == "success" else "🧪"
-                    await callback_query.message.edit_text(
-                        f"{icon} **Execution {result.status.upper()}**\n\n"
-                        f"Target: {outcome} @ ${price}\n"
-                        f"Status: {result.message}\n"
-                        f"TX Hash: `{result.order_id or 'N/A'}`",
-                        parse_mode="Markdown"
-                    )
-                else:
-                    await callback_query.message.edit_text(f"❌ Execution Failed: {result.message}")
-            except Exception as e:
-                await callback_query.message.edit_text(f"❌ System Error: {str(e)}")
+                from aiogram import Bot
+                self._bot = Bot(token=settings.TELEGRAM_BOT_TOKEN)
+                logger.info("TelegramNotifier: active (admin chat configured)")
+            except ImportError:
+                logger.warning("TelegramNotifier: aiogram not installed — notifications disabled")
+        else:
+            logger.info("TelegramNotifier: disabled (TELEGRAM_BOT_TOKEN or TELEGRAM_ADMIN_CHAT_ID not set)")
 
-    async def send_signal(self, chat_id: str, title: str, description: str, market_id: str, token_id: str, outcome: str, price: float):
+    # ── Public API ────────────────────────────────────────────────────────────
+
+    async def notify(self, text: str) -> None:
         """
-        Published a trade signal to a specific user with execution buttons.
+        Send a plain text message to the admin chat.
+        Always call with await; silently swallows errors to never crash the bot.
         """
-        if not self.bot:
-            logger.warning("Telegram Bot Token not set. Signal suppressed.")
+        if not self._bot or not self._chat_id:
             return
-
-        builder = InlineKeyboardBuilder()
-        builder.row(types.InlineKeyboardButton(
-            text=f"🚀 Copy {outcome} @ ${price}",
-            callback_data=f"copy_{market_id}_{token_id}_{outcome}_{price}")
-        )
-        builder.row(types.InlineKeyboardButton(
-            text="📊 View Market",
-            url=f"https://polymarket.com/event/{market_id}")
-        )
-
-        message_text = (
-            f"🎯 **NEW SMART MONEY SIGNAL**\n\n"
-            f"**Market:** {title}\n"
-            f"**Action:** {description}\n\n"
-            f"**Recommendation:** BUY {outcome} at < ${price}\n"
-            f"**Confidence:** High (Grade A Clusters Detected)"
-        )
-
         try:
-            await self.bot.send_message(
-                chat_id=chat_id,
-                text=message_text,
-                parse_mode="Markdown",
-                reply_markup=builder.as_markup()
+            await self._bot.send_message(
+                chat_id=self._chat_id,
+                text=text,
+                parse_mode=None,   # plain text, no markdown risks
             )
         except Exception as e:
-            logger.error(f"Failed to send Telegram signal: {e}")
+            logger.debug(f"TelegramNotifier: failed to send message: {e}")
 
-    async def start(self):
-        if self.bot:
-            logger.info("Starting Telegram Bot Polling...")
-            await self.dp.start_polling(self.bot)
+    def notify_sync(self, text: str) -> None:
+        """Fire-and-forget wrapper for non-async contexts."""
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                loop.create_task(self.notify(text))
+            else:
+                loop.run_until_complete(self.notify(text))
+        except Exception:
+            pass
 
-telegram_service = TelegramService()
+    # ── Pre-formatted event helpers ───────────────────────────────────────────
+
+    async def bot_started(self, mode: str = "SIMULATION") -> None:
+        emoji = "🟢" if mode != "REAL MONEY" else "🔴"
+        await self.notify(f"{emoji} PolyMaster ONLINE\nMode: {mode}\nAutonomous trading active.")
+
+    async def bot_stopped(self, reason: str = "Manual stop") -> None:
+        await self.notify(f"🔴 PolyMaster OFFLINE\nReason: {reason}")
+
+    async def trade_executed(self, market: str, outcome: str, score: float, size: float, sim: bool) -> None:
+        tag = "[SIM]" if sim else "[LIVE]"
+        market_short = market[:60] + ("..." if len(market) > 60 else "")
+        await self.notify(
+            f"🚀 TRADE EXECUTED {tag}\n"
+            f"Market: {market_short}\n"
+            f"Outcome: {outcome}  Score: {score:.2f}  Size: ${size:.0f}"
+        )
+
+    async def trade_resolved(self, market: str, result: str, pnl: Optional[float] = None) -> None:
+        if result == "WIN":
+            emoji = "✅ WIN"
+            pnl_str = f"  (+${pnl:.2f})" if pnl is not None else ""
+        else:
+            emoji = "❌ LOSS"
+            pnl_str = f"  (-${abs(pnl):.2f})" if pnl is not None else ""
+        market_short = market[:60] + ("..." if len(market) > 60 else "")
+        await self.notify(f"{emoji}{pnl_str}\n{market_short}")
+
+    async def stop_loss_triggered(self, loss_pct: float) -> None:
+        await self.notify(
+            f"🛑 STOP-LOSS TRIGGERED\n"
+            f"Daily loss exceeded {loss_pct:.0f}%. Bot pausing trades."
+        )
+
+    async def council_budget_warning(self, calls: int, budget: int) -> None:
+        await self.notify(
+            f"⚠️ Council budget: {calls}/{budget} calls today\n"
+            f"Approaching daily limit — cache will handle remaining."
+        )
+
+    async def critical_error(self, error: str) -> None:
+        short = str(error)[:200]
+        await self.notify(f"🚨 CRITICAL ERROR\n{short}")
+
+
+# Singleton — import this everywhere
+telegram = TelegramNotifier()

@@ -24,6 +24,7 @@ from app.engines.arbitrage.manager import arb_manager
 from app.engines.weather import weather_manager
 from app.engines.rewards.grinder import rewards_manager
 from app.engines.council.cache import council_cache
+from app.services.telegram_bot import telegram
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -406,13 +407,17 @@ class OutcomeResolver:
 async def autonomous_loop():
     load_dotenv()
 
+    mode_str = "REAL MONEY" if not settings.COPY_SIMULATION else "SIMULATION"
     logger.info("STARTING AUTONOMOUS TRADING ENGINE")
-    logger.info(f"Mode: {'REAL MONEY' if not settings.COPY_SIMULATION else 'SIMULATION'}")
+    logger.info(f"Mode: {mode_str}")
     logger.info(f"AI Model: {settings.AI_MODEL}")
     logger.info(f"Budget Protection: {settings.GLOBAL_STOP_LOSS_PCT*100}% Stop Loss")
     logger.info(f"Rewards Farming: {'ENABLED' if settings.ENABLE_REWARDS_FARMING else 'DISABLED'}")
     logger.info("Dynamic Scheduler: ENABLED")
     logger.info("  <6h  → every 5min | <24h → every 15min | <7d → every 1h | >7d → every 4h")
+
+    # Notify Telegram that the bot is online
+    await telegram.bot_started(mode=mode_str)
 
     # SmartMoneyTracker and ClusterDetector disabled (Incompatible with whale activity)
     # tracker = SmartMoneyTracker()
@@ -581,6 +586,12 @@ async def autonomous_loop():
                 f"{stats['tokens_saved']} tokens saved ({stats['cost_saved']})"
             )
 
+            # Warn via Telegram when Council budget is > 90%
+            _budget = getattr(settings, 'COUNCIL_MAX_DAILY_CALLS', 300)
+            _calls  = stats.get('daily_calls', 0)
+            if _calls > 0 and (_calls / _budget) >= 0.90 and cycle_count % 10 == 0:
+                await telegram.council_budget_warning(_calls, _budget)
+
             # ── Step 8: Scheduler maintenance (every 50 cycles ~50min) ───────
             if cycle_count % 50 == 0:
                 scheduler.purge_old_entries(max_age_hours=48)
@@ -599,10 +610,12 @@ async def autonomous_loop():
 
         except KeyboardInterrupt:
             logger.warning("Autonomous Loop stopped by user.")
+            await telegram.bot_stopped("Manual stop (KeyboardInterrupt)")
             break
         except Exception as e:
             logger.error(f"CRITICAL LOOP ERROR: {e}")
             logger.info("Restarting loop in 60s...")
+            await telegram.critical_error(str(e))
             await asyncio.sleep(60)
 
 
