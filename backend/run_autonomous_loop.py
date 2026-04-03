@@ -588,7 +588,7 @@ async def autonomous_loop():
 
             # Warn via Telegram when Council budget is > 90%
             _budget = getattr(settings, 'COUNCIL_MAX_DAILY_CALLS', 300)
-            _calls  = stats.get('daily_calls', 0)
+            _calls  = council_cache._daily_call_count
             if _calls > 0 and (_calls / _budget) >= 0.90 and cycle_count % 10 == 0:
                 await telegram.council_budget_warning(_calls, _budget)
 
