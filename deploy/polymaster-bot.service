@@ -5,7 +5,7 @@ After=network.target polymaster-api.service
 [Service]
 Type=simple
 User=ubuntu
-WorkingDirectory=/home/ubuntu/PolyMaster
+WorkingDirectory=/home/ubuntu/PolyMaster/backend
 EnvironmentFile=/home/ubuntu/PolyMaster/backend/.env
 ExecStart=/home/ubuntu/PolyMaster/backend/.venv/bin/python run_autonomous_loop.py
 Restart=always
