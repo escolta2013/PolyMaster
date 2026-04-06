@@ -257,6 +257,7 @@
       <div class="panel-title">[ SYSTEM STATUS ]</div>
       <div class="kv"><span class="kv-key">BOT STATE</span>       <span class="kv-val" id="bot-state">--</span></div>
       <div class="kv"><span class="kv-key">SIMULATION</span>      <span class="kv-val" id="sim-mode">--</span></div>
+      <div class="kv"><span class="kv-key">WALLET BAL.</span>     <span class="kv-val" id="wallet-balance">--</span></div>
       <div class="kv"><span class="kv-key">TRADES TODAY</span>    <span class="kv-val" id="trades-today">--</span></div>
       <div class="kv"><span class="kv-key">BUDGET USED</span>     <span class="kv-val" id="budget-used">--</span></div>
       <div class="kv"><span class="kv-key">BUDGET LIMIT</span>    <span class="kv-val" id="budget-limit">--</span></div>
@@ -401,7 +402,9 @@ async function fetchStatus() {
     const h = Math.floor(secs/3600), m = Math.floor((secs%3600)/60), s = secs%60;
     document.getElementById('uptime').textContent = `${h}h ${m}m ${s}s`;
 
-    // Budget
+    // Budget & Wallet
+    const bal = d.wallet_balance_usdc ?? 0;
+    document.getElementById('wallet-balance').textContent = `$${bal.toFixed(2)}`;
     document.getElementById('trades-today').textContent = d.trades_today ?? '--';
     const spent = d.budget_spent_today ?? 0;
     const limit = d.budget_daily_limit ?? 100;

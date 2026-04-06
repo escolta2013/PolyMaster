@@ -21,9 +21,13 @@ def _get_supabase():
     return create_client(url, key)
 
 
+import time
+from eth_account import Account
+from app.engines.wallet.manager import wallet_manager
+
 # ── Bot start time (tracks uptime from when this module was first loaded) ──
 _START_TIME = datetime.now(timezone.utc)
-
+_WALLET_BALANCE_CACHE = {"balance": 0.0, "last_updated": 0}
 
 @router.get("/status")
 async def get_status():
@@ -46,6 +50,21 @@ async def get_status():
     losses_total = 0
     pnl_usdc = 0.0
     recent_trades = []
+
+    # ── Poly USDC Balance (Cached 60s) ──
+    usdc_balance = _WALLET_BALANCE_CACHE["balance"]
+    if time.time() - _WALLET_BALANCE_CACHE["last_updated"] > 60:
+        try:
+            if settings.PK:
+                acct = Account.from_key(settings.PK)
+                # This will return 100.0 if COPY_SIMULATION is True, or real balance if False
+                new_bal = wallet_manager.get_onchain_balance(acct.address)
+                if new_bal > 0 or not settings.COPY_SIMULATION:
+                    usdc_balance = new_bal
+                    _WALLET_BALANCE_CACHE["balance"] = usdc_balance
+                    _WALLET_BALANCE_CACHE["last_updated"] = time.time()
+        except:
+            pass
 
     try:
         sb = _get_supabase()
@@ -118,7 +137,8 @@ async def get_status():
         "simulation_mode": settings.COPY_SIMULATION,
         "uptime_seconds": uptime_secs,
         "cycle_count": None,  # Future: expose from loop
-        # Budget
+        # Wallet & Budget
+        "wallet_balance_usdc": usdc_balance,
         "trades_today": trades_today,
         "budget_spent_today": round(budget_spent, 2),
         "budget_daily_limit": settings.COPY_MAX_DAILY,
