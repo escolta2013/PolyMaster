@@ -1,3 +1,4 @@
+from typing import Optional
 from app.core.client import PolyClient
 from app.engines.ghost.order_manager import OrderManager
 from app.engines.ghost.risk_manager import RiskManager
