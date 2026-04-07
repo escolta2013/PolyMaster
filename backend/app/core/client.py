@@ -40,7 +40,10 @@ class PolyClient:
                 # Use provided creds if they exist, otherwise derive
                 if settings.CLOB_API_KEY and settings.CLOB_SECRET:
                     from py_clob_client.clob_types import ApiCreds
-                    creds = ApiCreds(settings.CLOB_API_KEY, settings.CLOB_SECRET, settings.CLOB_PASSPHRASE)
+                    clob_key = settings.CLOB_API_KEY.strip(' "\'')
+                    clob_sec = settings.CLOB_SECRET.strip(' "\'')
+                    clob_pass = settings.CLOB_PASSPHRASE.strip(' "\'') if settings.CLOB_PASSPHRASE else ""
+                    creds = ApiCreds(clob_key, clob_sec, clob_pass)
                     logger.info("Using provided API credentials")
                 else:
                     logger.info("Deriving API credentials from PK...")
