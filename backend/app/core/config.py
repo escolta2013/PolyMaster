@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     
     # Wallet Manager Settings
     WALLET_ENCRYPTION_KEY: Optional[str] = None
-    POLYGON_RPC_URL: str = "https://polygon-rpc.com"
+    POLYGON_RPC_URL: str = "https://polygon.llamarpc.com"
     
     # Telegram Bot Settings
     TELEGRAM_BOT_TOKEN: Optional[str] = None
