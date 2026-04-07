@@ -30,8 +30,12 @@ class PolyClient:
             logger.info("Initializing fully authenticated PolyClient")
             # Step 1: Create temp client to derive or use creds
             is_proxy = hasattr(settings, 'POLY_PROXY_ADDRESS') and settings.POLY_PROXY_ADDRESS
-            sig_type = 2 if is_proxy else 1
+            # EOA is 0, Proxy can be 1 or 2. We'll start with 2 as most common for new accounts
+            # but we use 0 if there is no proxy.
+            sig_type = 2 if is_proxy else 0
             funder = settings.POLY_PROXY_ADDRESS if is_proxy else None
+            
+            logger.info(f"Connecting with sig_type={sig_type} and funder={funder}")
             
             try:
                 temp_client = PolymarketClobClient(
@@ -62,10 +66,21 @@ class PolyClient:
                     funder=funder,
                     creds=creds
                 )
-                logger.success("Authenticated SDK Client Ready")
+                logger.success(f"Authenticated SDK Client Ready (Type {sig_type})")
             except Exception as e:
-                logger.warning(f"Authentication failed: {e}. Falling back to limited mode.")
-                self.sdk = temp_client
+                logger.warning(f"Authentication failed with Type {sig_type}: {e}. Retrying with Type 1 if proxy...")
+                if is_proxy and sig_type == 2:
+                    try:
+                        sig_type = 1
+                        temp_client = PolymarketClobClient(host=self.host, key=pk, chain_id=chain_id, signature_type=sig_type, funder=funder)
+                        creds = temp_client.create_or_derive_api_creds()
+                        self.sdk = PolymarketClobClient(host=self.host, key=pk, chain_id=chain_id, signature_type=sig_type, funder=funder, creds=creds)
+                        logger.success("Authenticated SDK Client Ready (Type 1 Fallback)")
+                    except Exception as e2:
+                        logger.error(f"Ultimate authentication failure: {e2}")
+                        self.sdk = temp_client
+                else:
+                    self.sdk = temp_client
         else:
             logger.info("Initializing Read-Only PolyClient")
             self.sdk = PolymarketClobClient(host=self.host, chain_id=chain_id)
