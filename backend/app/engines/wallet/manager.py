@@ -74,11 +74,8 @@ class WalletManager:
             from py_clob_client.clob_types import BalanceAllowanceParams, AssetType
             
             client = PolyClient.get_instance().sdk
-            # La forma correcta según la última firma del SDK:
-            resp = client.get_balance_allowance(
-                asset_type=AssetType.COLLATERAL,
-                funder_address=address # <-- Así es como se pide por fin el de tu Proxy
-            )
+            params = BalanceAllowanceParams(asset_type=AssetType.COLLATERAL)
+            resp = client.get_balance_allowance(params)
             
             # Polymarket returns balance with 6 decimals logic
             # E.g. "9930000" for 9.93 USDC
