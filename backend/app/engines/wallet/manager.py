@@ -74,7 +74,10 @@ class WalletManager:
             from py_clob_client.clob_types import BalanceAllowanceParams, AssetType
             
             client = PolyClient.get_instance().sdk
-            params = BalanceAllowanceParams(asset_type=AssetType.COLLATERAL)
+            params = BalanceAllowanceParams(
+                asset_type=AssetType.COLLATERAL,
+                user=address
+            )
             resp = client.get_balance_allowance(params)
             
             # Polymarket returns balance with 6 decimals logic
