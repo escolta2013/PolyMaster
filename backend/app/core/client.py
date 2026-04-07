@@ -29,12 +29,17 @@ class PolyClient:
         if pk:
             logger.info("Initializing fully authenticated PolyClient")
             # Step 1: Create temp client to derive or use creds
+            is_proxy = hasattr(settings, 'POLY_PROXY_ADDRESS') and settings.POLY_PROXY_ADDRESS
+            sig_type = 2 if is_proxy else 1
+            funder = settings.POLY_PROXY_ADDRESS if is_proxy else None
+            
             try:
                 temp_client = PolymarketClobClient(
                     host=self.host,
                     key=pk,
                     chain_id=chain_id,
-                    signature_type=1
+                    signature_type=sig_type,
+                    funder=funder
                 )
                 
                 # Use provided creds if they exist, otherwise derive
@@ -53,7 +58,8 @@ class PolyClient:
                     host=self.host,
                     key=pk,
                     chain_id=chain_id,
-                    signature_type=1,
+                    signature_type=sig_type,
+                    funder=funder,
                     creds=creds
                 )
                 logger.success("Authenticated SDK Client Ready")

@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     CLOB_API_KEY: Optional[str] = None
     CLOB_SECRET: Optional[str] = None
     CLOB_PASSPHRASE: Optional[str] = None
+    POLY_PROXY_ADDRESS: Optional[str] = None  # Set if using a Polymarket proxy wallet
     
     # AI / LLM Settings
     OPENAI_API_KEY: Optional[str] = None
