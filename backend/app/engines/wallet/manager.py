@@ -99,7 +99,17 @@ class WalletManager:
 
             return balance
         except Exception as e:
-            logger.error(f"Error fetching on-chain balance for {address}: {e}")
+            err_msg = str(e)
+            logger.error(f"Error fetching on-chain balance for {address}: {err_msg}")
+            
+            # Notificamos a Telegram usando importación local para evitar ciclos y usando la función síncrona
+            if "Too Many Requests" in err_msg or "429" in err_msg:
+                from app.services.telegram_bot import telegram
+                telegram.notify_sync(f"⚠️ Alerta de RPC: Límite de consultas (429) excedido intentando obtener balance de Polygon. Carga otra URL de RPC.")
+            elif "Failed to establish a new connection" in err_msg:
+                from app.services.telegram_bot import telegram
+                telegram.notify_sync(f"⚠️ Alerta de RPC: Nodo de Polygon caído o inaccesible.")
+                
             return 0.0
 
     def withdraw_usdc(self, user_id: str, target_address: str, amount: float) -> str:
