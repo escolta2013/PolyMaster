@@ -81,7 +81,7 @@ class Settings(BaseSettings):
     ENABLE_WEATHER_EXP: bool = True       # Enable weather mispricing scanner
     WEATHER_SYNC_INTERVAL: int = 300      # Check weather data every 5 mins
     WEATHER_MIN_TEMP_DIFF: float = 1.0    # Execute if diff between NOAA and market is > 1.0°F/C (or threshold)
-    WEATHER_MAX_BUDGET: float = 50.0      # Max USDC per weather trade
+    WEATHER_MAX_BUDGET: float = 1.0       # Failsafe default: $1 USDC
     WEATHER_PRICE_BUFFER: float = 0.985   # Do not buy if price > this
 
     # Portfolio Protection

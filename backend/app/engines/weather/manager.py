@@ -165,18 +165,22 @@ class WeatherManager:
             if market_id in self.executed_markets:
                 return 
 
-            # 2. Check Supabase (persistent memory) to prevent spam on restarts
+            # 2. Check Supabase (persistent memory)
             try:
-                from supabase import create_client
-                supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
-                today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
-                existing = supabase.table("autonomous_logs").select("id").eq("market_id", market_id).gte("detected_at", today).execute()
+                from app.engines.wallet.manager import wallet_manager
+                supabase = wallet_manager.supabase 
+                
+                # Check for ANY record for this market_id
+                existing = supabase.table("autonomous_logs").select("id").eq("market_id", market_id).limit(1).execute()
                 if existing.data:
-                    logger.debug(f"Weather Exploit: Market {market_id} already executed today (DB record found). Skipping.")
+                    logger.debug(f"Weather Exploit: Market {market_id} record found in DB. Skipping.")
                     self.executed_markets.add(market_id)
                     return
+                
+                # Add to local memory immediately to prevent race conditions within the same cycle
+                self.executed_markets.add(market_id)
             except Exception as e:
-                logger.error(f"Weather Exploit: DB check failed: {e}")
+                logger.error(f"Weather Exploit: DB dedup check failed: {e}")
 
             logger.success(f"Weather Exploit FOUND EDGE: {city} | {reason}")
             self.executed_markets.add(market_id)
