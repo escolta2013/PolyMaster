@@ -69,6 +69,8 @@ async def get_status():
                     # Only accept 0 if we already had 0, to prevent random RPC failures from resetting it 
                     usdc_balance = 0.0
                     _WALLET_BALANCE_CACHE["last_updated"] = time.time()
+        except:
+            pass
 
     try:
         sb = _get_supabase()
