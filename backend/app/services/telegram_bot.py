@@ -51,6 +51,7 @@ class TelegramNotifier:
         payload = {
             "chat_id": self._chat_id,
             "text": text,
+            "parse_mode": "HTML"
         }
         
         try:
@@ -84,14 +85,31 @@ class TelegramNotifier:
     async def bot_stopped(self, reason: str = "Manual stop") -> None:
         await self.notify(f"🔴 PolyMaster OFFLINE\nReason: {reason}")
 
-    async def trade_executed(self, market: str, outcome: str, score: float, size: float, sim: bool) -> None:
-        tag = "[SIM]" if sim else "[LIVE]"
+    async def trade_executed(self, market: str, outcome: str, score: float, size: float, sim: bool, balance: float = 0.0) -> None:
+        tag = "🧪 [SIMULACIÓN]" if sim else "⚡ [LIVE TRADE]"
         market_short = market[:60] + ("..." if len(market) > 60 else "")
-        await self.notify(
-            f"🚀 TRADE EXECUTED {tag}\n"
-            f"Market: {market_short}\n"
-            f"Outcome: {outcome}  Score: {score:.2f}  Size: ${size:.0f}"
+        msg = (
+            f"<b>{tag}</b>\n"
+            f"🎯 <b>Mercado:</b> {market_short}\n"
+            f"✅ <b>Posición:</b> {outcome}\n"
+            f"📊 <b>Score AI:</b> {score:.2f}\n"
+            f"💰 <b>Tamaño:</b> ${size:,.2f} USDC\n"
+            f"🏦 <b>Balance actual:</b> ${balance:,.2f} USDC"
         )
+        await self.notify(msg)
+
+    async def notify_status(self, balance: float, trades_24h: int, profit_24h: float) -> None:
+        """Periodic status update."""
+        msg = (
+            f"📊 <b>ESTADO DEL BOT</b>\n"
+            f"──────────────\n"
+            f"🏦 <b>Balance Wallet:</b> ${balance:,.2f} USDC\n"
+            f"🔄 <b>Trades (24h):</b> {trades_24h}\n"
+            f"📈 <b>P&L (24h):</b> {profit_24h:+.2f} USDC\n"
+            f"──────────────\n"
+            f"Status: Corriendo ✅"
+        )
+        await self.notify(msg)
 
     async def trade_resolved(self, market: str, result: str, pnl: Optional[float] = None) -> None:
         if result == "WIN":

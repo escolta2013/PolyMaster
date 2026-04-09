@@ -600,6 +600,33 @@ async def autonomous_loop():
                     f"Scheduler Stats: {sched_stats['tracked_markets']} markets tracked"
                 )
 
+            # ── Step 9: Telegram Health Report (every 10 cycles ~10min) ─────
+            if cycle_count % 10 == 0:
+                try:
+                    from app.engines.wallet.manager import wallet_manager
+                    proxy_addr = settings.POLY_PROXY_ADDRESS
+                    if proxy_addr:
+                        balance = wallet_manager.get_onchain_balance(proxy_addr)
+                        
+                        # Fetch 24h stats from Supabase
+                        try:
+                            _sb = resolver._get_supabase()
+                            day_ago = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+                            _logs_24h = _sb.table("autonomous_logs").select("correct").gte("detected_at", day_ago).in_("decision", ["EXECUTED_LIVE", "EXECUTED_SIM", "WOULD_EXECUTE"]).execute().data
+                            
+                            t24 = len(_logs_24h)
+                            w24 = sum(1 for r in _logs_24h if r["correct"] == "WIN")
+                            l24 = sum(1 for r in _logs_24h if r["correct"] == "LOSS")
+                            
+                            # Simple P&L estimate based on $20 average trade if real trades identified
+                            # For now just send wins/losses
+                            await telegram.notify_status(balance=balance, trades_24h=t24, profit_24h=(w24 - l24) * 20.0)
+                        except Exception as e:
+                            logger.error(f"Health Report stats failed: {e}")
+                            await telegram.notify_status(balance=balance, trades_24h=0, profit_24h=0.0)
+                except Exception as e:
+                    logger.error(f"Step 9 Health Report Error: {e}")
+
             # ── Sleep ─────────────────────────────────────────────────────────
             cycle_count += 1
             # Base cycle is still 60s — the scheduler skips markets internally

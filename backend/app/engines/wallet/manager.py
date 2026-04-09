@@ -101,10 +101,13 @@ class WalletManager:
         for attempt in range(len(_RPC_LIST)):
             current_url = _RPC_LIST[self._rpc_index]
             try:
+                if not self.w3.is_connected():
+                    raise ConnectionResetError("Web3 not connected to RPC")
                 return self._fetch_balance(address)
             except Exception as e:
                 err_msg = str(e)
-                if "429" in err_msg or "Too Many Requests" in err_msg or "Connection" in err_msg:
+                # Incluimos "Web3 not connected" como error de rotación
+                if any(x in err_msg for x in ["429", "Too Many Requests", "Connection", "not connected"]):
                     self._rotate_rpc(current_url)
                 else:
                     # Error no relacionado con el RPC (ej. dirección inválida) — no rotar
@@ -125,12 +128,9 @@ class WalletManager:
         USDC_ADDRESS = "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"
 
         try:
-            if not self.w3.is_connected():
-                raise ConnectionError("Web3 not connected to RPC")
-
             # Native USDC
             usdc_native = self.w3.eth.contract(
-                address=Web3.to_checksum_address("0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"), abi=USDC_ABI
+                address=Web3.to_checksum_address(USDC_ADDRESS), abi=USDC_ABI
             )
             bal_n = usdc_native.functions.balanceOf(Web3.to_checksum_address(address)).call()
             

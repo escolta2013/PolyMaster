@@ -155,8 +155,23 @@ class WeatherManager:
                     reason = f"Actual temp ({actual_temp}) already EXCEEDED threshold ({threshold}). YES should be 0, but is {current_price}."
 
         if edge_found:
+            # 1. Check local memory (fast)
             if market_id in self.executed_markets:
-                return # Skip silently
+                return 
+
+            # 2. Check Supabase (persistent memory) to prevent spam on restarts
+            try:
+                from supabase import create_client
+                supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
+                today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+                existing = supabase.table("autonomous_logs").select("id").eq("market_id", market_id).gte("detected_at", today).execute()
+                if existing.data:
+                    logger.debug(f"Weather Exploit: Market {market_id} already executed today (DB record found). Skipping.")
+                    self.executed_markets.add(market_id)
+                    return
+            except Exception as e:
+                logger.error(f"Weather Exploit: DB check failed: {e}")
+
             logger.success(f"Weather Exploit FOUND EDGE: {city} | {reason}")
             self.executed_markets.add(market_id)
             await self._execute_trade(market, yes_token_id, actual_temp, threshold, reason)
@@ -204,6 +219,8 @@ class WeatherManager:
     async def _execute_trade(self, market: Dict, token_id: str, actual: float, threshold: float, reason: str):
         """Executes a trade based on the exploit."""
         from app.engines.ghost.order_manager import OrderManager
+from app.services.telegram_bot import telegram
+from app.engines.wallet.manager import wallet_manager
         order_mgr = OrderManager()
         
         mode = "SIMULATION" if settings.COPY_SIMULATION else "LIVE"
@@ -233,26 +250,43 @@ class WeatherManager:
         logger.info(f"Weather Exploit [{mode}]: Placing trade on '{market.get('question')[:40]}...' | Reason: {reason}")
         
         if settings.COPY_SIMULATION:
-            logger.success(f"Weather Exploit [SIM]: Would buy SHAREs for {size_usdc} USDC on token {target_token}")
+            logger.success(f"Weather Exploit [SIM]: Would buy SHARES for {size_usdc} USDC on token {target_token}")
+            await self._log_to_supabase(market, actual, threshold, reason, decision="EXECUTED_SIM", token_id=target_token)
         else:
             # Execution logic
             try:
-                # Place a generous limit order to sweep the sub-1.00 liquidity
-                # If it's already 100% certain, any price < 0.99 is profit.
                 res = order_mgr.create_and_post_order(
                     token_id=target_token,
                     price=0.985, # Aggressive limit to take all lagging asks
                     size=size_usdc / 0.985,
                     side="BUY"
                 )
-                logger.success(f"Weather Exploit [LIVE]: Executed! Order ID: {res.get('order_id')}")
+                if res.get("status") == "success":
+                    order_id = res.get("order_id")
+                    logger.success(f"Weather Exploit [LIVE]: Executed! Order ID: {order_id}")
+                    # Notify Telegram with Balance
+                    try:
+                        balance = wallet_manager.get_onchain_balance(settings.POLY_PROXY_ADDRESS) if settings.POLY_PROXY_ADDRESS else 0.0
+                        await telegram.trade_executed(
+                            market=f"[WEATHER] {market.get('question')}",
+                            outcome="YES",
+                            score=1.0,
+                            size=size_usdc,
+                            sim=False,
+                            balance=balance
+                        )
+                    except Exception as te:
+                        logger.error(f"Weather Telegram notification failed: {te}")
+                    await self._log_to_supabase(market, actual, threshold, reason, decision="EXECUTED_LIVE", token_id=target_token, order_id=order_id)
+                else:
+                    error_msg = res.get("message", "Unknown error")
+                    logger.error(f"Weather Exploit [LIVE]: Execution failed: {error_msg}")
+                    await self._log_to_supabase(market, actual, threshold, reason, decision="FAILED", token_id=target_token)
             except Exception as e:
-                logger.error(f"Weather Exploit [LIVE]: Execution failed: {e}")
+                logger.error(f"Weather Exploit [LIVE]: Execution exception: {e}")
+                await self._log_to_supabase(market, actual, threshold, reason, decision="ERROR", token_id=target_token)
 
-        # Log to Supabase
-        await self._log_to_supabase(market, actual, threshold, reason)
-
-    async def _log_to_supabase(self, market: Dict, actual: float, threshold: float, reason: str):
+    async def _log_to_supabase(self, market: Dict, actual: float, threshold: float, reason: str, decision: str, token_id: str, order_id: str = None):
         try:
             from supabase import create_client
             supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
@@ -261,7 +295,9 @@ class WeatherManager:
                 "market_question": f"[WEATHER] {market.get('question', '')[:200]}",
                 "outcome": "YES/NO (Weather)",
                 "council_score": 1.0, # Physical certainty
-                "decision": "EXECUTED_SIM" if settings.COPY_SIMULATION else "EXECUTED_LIVE",
+                "decision": decision,
+                "token_id": token_id,
+                "execution_tx": order_id, # Usamos el order_id como referencia
                 "reasoning": {
                     "strategy": "Weather Exploit",
                     "actual_temp": actual,
@@ -271,7 +307,7 @@ class WeatherManager:
                 "size_usdc": settings.WEATHER_MAX_BUDGET,
                 "detected_at": datetime.now(timezone.utc).isoformat()
             }).execute()
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"Weather Exploit: Failed to update Supabase log: {e}")
 
 weather_manager = WeatherManager()

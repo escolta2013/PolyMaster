@@ -7,6 +7,8 @@ from app.core.config import settings
 from app.engines.council.orchestrator import AgentOrchestrator
 from app.engines.council.cache import council_cache
 from app.engines.tracker.copy_executor import CopyExecutor, CopyTradeRequest
+from app.services.telegram_bot import telegram
+from app.engines.wallet.manager import wallet_manager
 
 class DirectorAgent:
     """
@@ -811,6 +813,20 @@ class DirectorAgent:
                     if result.status in ["success", "simulated"]:
                         decision_status = "EXECUTED"
                         tx_hash = result.order_id
+                        
+                        # Notify Telegram with Balance
+                        try:
+                            balance = wallet_manager.get_onchain_balance(settings.POLY_PROXY_ADDRESS) if settings.POLY_PROXY_ADDRESS else 0.0
+                            await telegram.trade_executed(
+                                market=question,
+                                outcome=exec_outcome,
+                                score=score,
+                                size=size_usdc,
+                                sim=result.status == "simulated",
+                                balance=balance
+                            )
+                        except Exception as te:
+                            logger.error(f"Telegram execution notification failed: {te}")
                     else:
                         decision_status = "FAILED"
                         logger.error(f"Director Execution Failed: {result.message}")
