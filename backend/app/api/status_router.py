@@ -81,7 +81,7 @@ def get_status():
             exec_resp = (
                 sb.table("autonomous_logs")
                 .select("id, council_score, market_question, decision, correct, detected_at, outcome")
-                .in_("decision", ["EXECUTED", "WOULD_EXECUTE"])
+                .in_("decision", ["EXECUTED", "WOULD_EXECUTE", "EXECUTED_LIVE", "REJECTED"])
                 .gte("detected_at", today)
                 .order("detected_at", desc=True)
                 .limit(8)

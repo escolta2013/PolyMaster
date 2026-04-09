@@ -45,6 +45,7 @@ class WeatherManager:
         self.client = PolyClient.get_instance()
         self.gamma_api = settings.GAMMA_API_URL
         self._last_scan = {} # market_id -> last_checked
+        self.executed_markets = set() # Dedup guard against infinite executions
 
     async def scan_and_exploit(self):
         """Main entry point for the autonomous loop."""
@@ -154,7 +155,10 @@ class WeatherManager:
                     reason = f"Actual temp ({actual_temp}) already EXCEEDED threshold ({threshold}). YES should be 0, but is {current_price}."
 
         if edge_found:
+            if market_id in self.executed_markets:
+                return # Skip silently
             logger.success(f"Weather Exploit FOUND EDGE: {city} | {reason}")
+            self.executed_markets.add(market_id)
             await self._execute_trade(market, yes_token_id, actual_temp, threshold, reason)
 
     def _extract_city(self, question: str) -> Optional[str]:

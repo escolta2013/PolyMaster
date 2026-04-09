@@ -152,8 +152,8 @@ class PolymarketIndexer:
                 stats = {"price_fail": 0, "spread_fail": 0, "depth_fail": 0}
                 
                 # Paper Mode: Relax filters to get more calibration data
-                min_p = 0.10 if is_paper else 0.35
-                max_p = 0.90 if is_paper else 0.65
+                min_p = 0.10 if is_paper else 0.20
+                max_p = 0.90 if is_paper else 0.80
                 max_spread = settings.PAPER_TRADING_MAX_SPREAD if settings.PAPER_TRADING_MODE else 0.15
                 
                 for m in verified_results:

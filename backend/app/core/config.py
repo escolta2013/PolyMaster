@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     AUTONOMOUS_USER_ID: Optional[str] = None  # The UUID of the "System Proxy Wallet"
     AUTONOMOUS_MAX_SIZE: float = 50.0  # Max exposure per auto-trade
     AUTONOMOUS_MAX_MARKET_DURATION_HOURS: int = 96 # Skip markets ending > 96h from now
-    AUTONOMOUS_CONFIDENCE_MAX: float = 0.95        # Cap for score in Kelly-like sizing
+    AUTONOMOUS_CONFIDENCE_MAX: float = 0.75        # Cap for score in Kelly-like sizing
     AUTONOMOUS_MIN_WALLETS: int = 2 # Min wallets to trigger a cluster alert
     
     # Paper Trading Mode (Calibration Phase)
@@ -56,7 +56,7 @@ class Settings(BaseSettings):
     # filters but never actually executes trades. Used to gather calibration data.
     PAPER_TRADING_MODE: bool = True
     PAPER_TRADING_MAX_SPREAD: float = 0.15  # Stricter spread for production alignment
-    PAPER_MIN_EDGE_NET: float = 0.07        # Min net edge after spread friction
+    PAPER_MIN_EDGE_NET: float = 0.05        # Min net edge after spread friction
     
     # Rewards Optimization Settings
     ENABLE_REWARDS_FARMING: bool = False
