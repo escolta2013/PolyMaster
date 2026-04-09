@@ -62,32 +62,24 @@ class WalletManager:
             raise e
 
     def get_onchain_balance(self, address: str) -> float:
-        """Fetch the real USDC balance for an address on Polygon via CLOB."""
+        """Fetch the real USDC balance for an address on Polygon via Web3."""
         # --- FAKE BALANCE INJECTOR FOR SIMULATION ---
         if settings.COPY_SIMULATION:
             logger.info(f" [SIM] Injecting fake $100 balance for UI display on {address}")
             return 100.0
         # --------------------------------------------
-        
+
         try:
-            from app.core.client import PolyClient
-            from py_clob_client.clob_types import BalanceAllowanceParams, AssetType
-            
-            client = PolyClient.get_instance().sdk
-            params = BalanceAllowanceParams(asset_type=AssetType.COLLATERAL)
-            resp = client.get_balance_allowance(params)
-            
-            # Polymarket returns balance with 6 decimals logic
-            # E.g. "9930000" for 9.93 USDC
-            balance_str = resp.get("balance", "0")
-            balance = float(balance_str) / 10**6
-            
-            # --- Failsafe: if CLOB returns 0 but they do have balance, maybe try Web3?
-            if balance == 0.0 and self.w3.is_connected():
-                usdc = self.w3.eth.contract(address=Web3.to_checksum_address(USDC_ADDRESS), abi=USDC_ABI)
-                raw = usdc.functions.balanceOf(Web3.to_checksum_address(address)).call()
-                balance = raw / 10**6
-            
+            if not self.w3.is_connected():
+                logger.warning("Web3 not connected, cannot fetch on-chain balance")
+                return 0.0
+
+            usdc = self.w3.eth.contract(
+                address=Web3.to_checksum_address(USDC_ADDRESS), abi=USDC_ABI
+            )
+            raw = usdc.functions.balanceOf(Web3.to_checksum_address(address)).call()
+            balance = raw / 10**6
+
             # Update Supabase Cache
             try:
                 self.supabase.table("user_wallets").update({
@@ -96,7 +88,7 @@ class WalletManager:
                 }).eq("proxy_address", address).execute()
             except Exception as e:
                 logger.debug(f"Could not update balance cache: {e}")
-                
+
             return balance
         except Exception as e:
             logger.error(f"Error fetching on-chain balance for {address}: {e}")
