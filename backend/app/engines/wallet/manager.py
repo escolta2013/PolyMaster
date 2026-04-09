@@ -22,15 +22,21 @@ USDC_ABI = [
 # Cadena de fallback de RPCs de Polygon.
 # Si uno falla con 429, el sistema pasa automáticamente al siguiente.
 _RPC_LIST = [
-    getattr(settings, "POLYGON_RPC_URL", None) or "https://polygon-rpc.com/",
+    settings.ALCHEMY_RPC_URL,
+    settings.INFURA_RPC_URL,
+    settings.POLYGON_RPC_URL,
     "https://polygon-rpc.com/",
     "https://rpc.ankr.com/polygon",
     "https://polygon.llamarpc.com",
     "https://1rpc.io/matic",
 ]
 # Remover None y duplicados manteniendo orden
-_seen_rpcs: set = set()
-_RPC_LIST = [r for r in _RPC_LIST if r and r not in _seen_rpcs and not _seen_rpcs.add(r)]
+_seen_rpcs = []
+_FINAL_RPC_LIST = []
+for r in _RPC_LIST:
+    if r and r not in _seen_rpcs:
+        _FINAL_RPC_LIST.append(r)
+        _seen_rpcs.append(r)
 
 
 class WalletManager:
@@ -42,14 +48,14 @@ class WalletManager:
     def __init__(self):
         self.supabase: Client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
         self._rpc_index = 0
-        self.w3 = Web3(Web3.HTTPProvider(_RPC_LIST[0]))
+        self.w3 = Web3(Web3.HTTPProvider(_FINAL_RPC_LIST[0]))
         # Enable HD wallet features
         Account.enable_unaudited_hdwallet_features()
 
     def _rotate_rpc(self, failed_url: str):
         """Rota al siguiente RPC en la lista y notifica via Telegram."""
-        self._rpc_index = (self._rpc_index + 1) % len(_RPC_LIST)
-        new_url = _RPC_LIST[self._rpc_index]
+        self._rpc_index = (self._rpc_index + 1) % len(_FINAL_RPC_LIST)
+        new_url = _FINAL_RPC_LIST[self._rpc_index]
         logger.warning(f"RPC Failover: '{failed_url}' bloqueado. Rotando a '{new_url}'")
         self.w3 = Web3(Web3.HTTPProvider(new_url))
         try:
