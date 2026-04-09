@@ -19,16 +19,44 @@ USDC_ABI = [
     }
 ]
 
+# Cadena de fallback de RPCs de Polygon.
+# Si uno falla con 429, el sistema pasa automáticamente al siguiente.
+_RPC_LIST = [
+    getattr(settings, "POLYGON_RPC_URL", None) or "https://polygon-rpc.com/",
+    "https://polygon-rpc.com/",
+    "https://rpc.ankr.com/polygon",
+    "https://polygon.llamarpc.com",
+    "https://1rpc.io/matic",
+]
+# Remover None y duplicados manteniendo orden
+_seen_rpcs: set = set()
+_RPC_LIST = [r for r in _RPC_LIST if r and r not in _seen_rpcs and not _seen_rpcs.add(r)]
+
+
 class WalletManager:
     """
     Manages the lifecycle of proxy wallets: generation, storage, and retrieval.
     """
+
     
     def __init__(self):
         self.supabase: Client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
-        self.w3 = Web3(Web3.HTTPProvider(settings.POLYGON_RPC_URL))
+        self._rpc_index = 0
+        self.w3 = Web3(Web3.HTTPProvider(_RPC_LIST[0]))
         # Enable HD wallet features
         Account.enable_unaudited_hdwallet_features()
+
+    def _rotate_rpc(self, failed_url: str):
+        """Rota al siguiente RPC en la lista y notifica via Telegram."""
+        self._rpc_index = (self._rpc_index + 1) % len(_RPC_LIST)
+        new_url = _RPC_LIST[self._rpc_index]
+        logger.warning(f"RPC Failover: '{failed_url}' bloqueado. Rotando a '{new_url}'")
+        self.w3 = Web3(Web3.HTTPProvider(new_url))
+        try:
+            from app.services.telegram_bot import telegram
+            telegram.notify_sync(f"🔄 RPC Failover: {failed_url} bloqueado (429). Ahora usando {new_url}")
+        except Exception:
+            pass
 
     def generate_proxy_wallet(self, user_id: str) -> Dict[str, str]:
         """
@@ -62,17 +90,43 @@ class WalletManager:
             raise e
 
     def get_onchain_balance(self, address: str) -> float:
-        """Fetch the real USDC balance for an address on Polygon via Web3."""
+        """Fetch the real USDC balance on Polygon con failover automático de RPC."""
         # --- FAKE BALANCE INJECTOR FOR SIMULATION ---
         if settings.COPY_SIMULATION:
             logger.info(f" [SIM] Injecting fake $100 balance for UI display on {address}")
             return 100.0
         # --------------------------------------------
+        
+        # Intenta con cada RPC disponible antes de rendirse
+        for attempt in range(len(_RPC_LIST)):
+            current_url = _RPC_LIST[self._rpc_index]
+            try:
+                return self._fetch_balance(address)
+            except Exception as e:
+                err_msg = str(e)
+                if "429" in err_msg or "Too Many Requests" in err_msg or "Connection" in err_msg:
+                    self._rotate_rpc(current_url)
+                else:
+                    # Error no relacionado con el RPC (ej. dirección inválida) — no rotar
+                    logger.error(f"Error fetching balance for {address}: {err_msg}")
+                    return 0.0
+        
+        # Todos los RPCs fallaron
+        logger.error(f"Todos los RPCs de Polygon fallaron para {address}")
+        try:
+            from app.services.telegram_bot import telegram
+            telegram.notify_sync("🚨 CRÍTICO: Todos los nodos RPC de Polygon están caídos o limitados. Balance no disponible.")
+        except Exception:
+            pass
+        return 0.0
+
+    def _fetch_balance(self, address: str) -> float:
+        """Llamada directa al RPC activo para obtener el balance. Lanza excepción si falla."""
+        USDC_ADDRESS = "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"
 
         try:
             if not self.w3.is_connected():
-                logger.warning("Web3 not connected, cannot fetch on-chain balance")
-                return 0.0
+                raise ConnectionError("Web3 not connected to RPC")
 
             # Native USDC
             usdc_native = self.w3.eth.contract(
@@ -98,19 +152,9 @@ class WalletManager:
                 logger.debug(f"Could not update balance cache: {e}")
 
             return balance
-        except Exception as e:
-            err_msg = str(e)
-            logger.error(f"Error fetching on-chain balance for {address}: {err_msg}")
-            
-            # Notificamos a Telegram usando importación local para evitar ciclos y usando la función síncrona
-            if "Too Many Requests" in err_msg or "429" in err_msg:
-                from app.services.telegram_bot import telegram
-                telegram.notify_sync(f"⚠️ Alerta de RPC: Límite de consultas (429) excedido intentando obtener balance de Polygon. Carga otra URL de RPC.")
-            elif "Failed to establish a new connection" in err_msg:
-                from app.services.telegram_bot import telegram
-                telegram.notify_sync(f"⚠️ Alerta de RPC: Nodo de Polygon caído o inaccesible.")
-                
-            return 0.0
+        except Exception:
+            # Re-raise para que get_onchain_balance pueda rotar el RPC
+            raise
 
     def withdraw_usdc(self, user_id: str, target_address: str, amount: float) -> str:
         """

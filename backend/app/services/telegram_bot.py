@@ -77,8 +77,9 @@ class TelegramNotifier:
     # ── Pre-formatted event helpers ───────────────────────────────────────────
 
     async def bot_started(self, mode: str = "SIMULATION") -> None:
-        emoji = "🟢" if mode != "REAL MONEY" else "🔴"
-        await self.notify(f"{emoji} PolyMaster ONLINE\nMode: {mode}\nAutonomous trading active.")
+        emoji = "🟢"
+        mode_str = f"🧪 {mode}" if mode == "SIMULATION" else f"⚡ {mode}"
+        await self.notify(f"{emoji} PolyMaster ONLINE\nMode: {mode_str}\nAutonomous trading active.")
 
     async def bot_stopped(self, reason: str = "Manual stop") -> None:
         await self.notify(f"🔴 PolyMaster OFFLINE\nReason: {reason}")
