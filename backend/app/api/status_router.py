@@ -30,7 +30,7 @@ _START_TIME = datetime.now(timezone.utc)
 _WALLET_BALANCE_CACHE = {"balance": 0.0, "last_updated": 0}
 
 @router.get("/status")
-async def get_status():
+def get_status():
     """
     Returns a JSON snapshot of the bot's current state.
     Called every 5 seconds by the dashboard.
@@ -168,7 +168,7 @@ async def get_status():
 
 
 @router.get("/logs/recent")
-async def get_recent_logs(lines: int = 100):
+def get_recent_logs(lines: int = 100):
     """
     Returns the last N lines of the autonomous.log file.
     The dashboard streams this to its live log panel.
