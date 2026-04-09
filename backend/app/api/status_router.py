@@ -61,12 +61,14 @@ async def get_status():
                 
                 # This will return 100.0 if COPY_SIMULATION is True, or real balance if False
                 new_bal = wallet_manager.get_onchain_balance(target_address)
-                if new_bal > 0 or not settings.COPY_SIMULATION:
+                if new_bal > 0:
                     usdc_balance = new_bal
                     _WALLET_BALANCE_CACHE["balance"] = usdc_balance
                     _WALLET_BALANCE_CACHE["last_updated"] = time.time()
-        except:
-            pass
+                elif new_bal == 0 and not settings.COPY_SIMULATION and _WALLET_BALANCE_CACHE["balance"] == 0:
+                    # Only accept 0 if we already had 0, to prevent random RPC failures from resetting it 
+                    usdc_balance = 0.0
+                    _WALLET_BALANCE_CACHE["last_updated"] = time.time()
 
     try:
         sb = _get_supabase()
@@ -149,7 +151,7 @@ async def get_status():
         "losses_total": losses_total,
         "pnl_usdc": round(pnl_usdc, 2),
         # Council
-        "council_calls_today": cache_stats.get("daily_calls", 0),
+        "council_calls_today": council_cache._daily_call_count,
         "council_budget": settings.COUNCIL_MAX_DAILY_CALLS if hasattr(settings, "COUNCIL_MAX_DAILY_CALLS") else 300,
         "cache_hit_rate": cache_stats.get("hit_rate", "--"),
         "cached_markets": cache_stats.get("cached_markets", 0),
