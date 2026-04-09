@@ -120,12 +120,18 @@ class WeatherManager:
         
         # 4. Compare with Market Price
         # We need the YES token
-        token_ids = market.get("clobTokenIds", "[]")
+        token_ids = market.get("clobTokenIds", [])
         if isinstance(token_ids, str):
-            import json
-            token_ids = json.loads(token_ids)
+            try:
+                import json
+                token_ids = json.loads(token_ids)
+            except:
+                token_ids = []
         
-        if not token_ids: return
+        if not token_ids or not isinstance(token_ids, list): 
+            logger.warning(f"Weather Exploit: No valid token IDs found for {market.get('id')}")
+            return
+            
         yes_token_id = token_ids[0]
         
         # Get market price
@@ -235,11 +241,26 @@ class WeatherManager:
         # In binary markets YES + NO = 1. 
         # If we need NO, we can buy the NO token. 
         # But our `_process_market` usually targets the YES price.
+        # Default to YES token (first)
+        target_token = ""
+        token_ids = market.get("clobTokenIds", [])
         
-        target_token = token_id
+        # Robust parsing for string vs list
+        if isinstance(token_ids, str):
+            try:
+                import json
+                token_ids = json.loads(token_ids)
+            except:
+                token_ids = []
+                
+        if not token_ids or not isinstance(token_ids, list):
+            logger.error(f"Weather Exploit: Cannot execute trade, no valid token IDs for {market.get('id')}")
+            return
+            
+        target_token = token_ids[0] # Default YES
+        
         if "YES should be 0" in reason:
             # We want to buy NO. In Polymarket binary, it's usually the second token.
-            token_ids = market.get("clobTokenIds", [])
             if len(token_ids) > 1:
                 target_token = token_ids[1] # NO token
             else:
