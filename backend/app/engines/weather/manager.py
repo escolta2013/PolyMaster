@@ -215,11 +215,11 @@ class WeatherManager:
                     "forecast_days": 1
                 }
                 resp = await http.get(url, params=params, timeout=10)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    return data.get("current", {}).get("temperature_2m")
+                resp.raise_for_status()
+                data = resp.json()
+                return data.get("current", {}).get("temperature_2m")
             except Exception as e:
-                logger.error(f"Weather API Error: {e}")
+                logger.error(f"Weather API Error: {type(e).__name__} - {str(e)}")
         return None
 
     async def _execute_trade(self, market: Dict, token_id: str, actual: float, threshold: float, reason: str):
