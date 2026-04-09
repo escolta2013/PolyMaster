@@ -28,16 +28,11 @@ class TelegramNotifier:
     """
 
     def __init__(self):
-        self._bot = None
-        self._chat_id: Optional[str] = settings.TELEGRAM_ADMIN_CHAT_ID or None
+        self._token = settings.TELEGRAM_BOT_TOKEN
+        self._chat_id = settings.TELEGRAM_ADMIN_CHAT_ID
 
-        if settings.TELEGRAM_BOT_TOKEN and self._chat_id:
-            try:
-                from aiogram import Bot
-                self._bot = Bot(token=settings.TELEGRAM_BOT_TOKEN)
-                logger.info("TelegramNotifier: active (admin chat configured)")
-            except ImportError:
-                logger.warning("TelegramNotifier: aiogram not installed — notifications disabled")
+        if self._token and self._chat_id:
+            logger.info("TelegramNotifier: active (admin chat configured)")
         else:
             logger.info("TelegramNotifier: disabled (TELEGRAM_BOT_TOKEN or TELEGRAM_ADMIN_CHAT_ID not set)")
 
@@ -45,19 +40,28 @@ class TelegramNotifier:
 
     async def notify(self, text: str) -> None:
         """
-        Send a plain text message to the admin chat.
-        Always call with await; silently swallows errors to never crash the bot.
+        Send a plain text message to the admin chat using HTTPX directly.
+        Always call with await; silently swallows errors to never crash the bot, 
+        but logs them clearly as warnings.
         """
-        if not self._bot or not self._chat_id:
+        if not self._token or not self._chat_id:
             return
+            
+        url = f"https://api.telegram.org/bot{self._token}/sendMessage"
+        payload = {
+            "chat_id": self._chat_id,
+            "text": text,
+        }
+        
         try:
-            await self._bot.send_message(
-                chat_id=self._chat_id,
-                text=text,
-                parse_mode=None,   # plain text, no markdown risks
-            )
+            import httpx
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(url, json=payload, timeout=10.0)
+                if resp.status_code != 200:
+                    data = resp.json()
+                    logger.warning(f"TelegramNotifier failed: {data.get('description', 'Unknown Error')}. (Make sure you clicked /start in the bot!)")
         except Exception as e:
-            logger.debug(f"TelegramNotifier: failed to send message: {e}")
+            logger.warning(f"TelegramNotifier request failed: {e}")
 
     def notify_sync(self, text: str) -> None:
         """Fire-and-forget wrapper for non-async contexts."""
