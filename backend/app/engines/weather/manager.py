@@ -219,8 +219,8 @@ class WeatherManager:
     async def _execute_trade(self, market: Dict, token_id: str, actual: float, threshold: float, reason: str):
         """Executes a trade based on the exploit."""
         from app.engines.ghost.order_manager import OrderManager
-from app.services.telegram_bot import telegram
-from app.engines.wallet.manager import wallet_manager
+        from app.services.telegram_bot import telegram
+        from app.engines.wallet.manager import wallet_manager
         order_mgr = OrderManager()
         
         mode = "SIMULATION" if settings.COPY_SIMULATION else "LIVE"
