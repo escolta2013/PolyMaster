@@ -402,7 +402,7 @@ function renderTrades(trades) {
 
 async function fetchStatus() {
   try {
-    const res = await fetch(`${API}/api/status`, { signal: AbortSignal.timeout(4000) });
+    const res = await fetch(`${API}/api/status`, { signal: AbortSignal.timeout(10000) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const d = await res.json();
     document.getElementById('error-overlay').style.display = 'none';
@@ -472,39 +472,43 @@ async function fetchStatus() {
     renderTrades(d.recent_trades);
 
   } catch(e) {
-    document.getElementById('error-overlay').style.display = 'flex';
-    document.getElementById('error-msg').textContent = e.message;
+    if (e.name !== 'AbortError') {
+      document.getElementById('error-overlay').style.display = 'flex';
+      document.getElementById('error-msg').textContent = e.message;
+    }
+  } finally {
+    setTimeout(fetchStatus, 3000);
   }
 }
 
 async function fetchLogs() {
   try {
-    const res = await fetch(`${API}/api/logs/recent?lines=40`, { signal: AbortSignal.timeout(3000) });
-    if (!res.ok) return;
+    const res = await fetch(`${API}/api/logs/recent?lines=40`, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) throw new Error('logs off');
     const d = await res.json();
     const lines = d.lines || [];
     
     // Naive diff check to avoid unnecessary DOM paints
     const newStr = lines.join('');
-    if (newStr === prevDataStr) return;
-    prevDataStr = newStr;
+    if (newStr !== prevDataStr) {
+      prevDataStr = newStr;
 
-    const html = lines.map(l => `<div class="log-line ${formatColorClass(l)}">${l.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>`).join('');
-    
-    const container = document.getElementById('log-lines');
-    const wasAtBottom = container.scrollHeight - container.clientHeight <= container.scrollTop + 20;
-    
-    container.innerHTML = html;
-    if (wasAtBottom) container.scrollTop = container.scrollHeight;
-    
-  } catch(e) {}
+      const html = lines.map(l => `<div class="log-line ${formatColorClass(l)}">${l.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>`).join('');
+      
+      const container = document.getElementById('log-lines');
+      const wasAtBottom = container.scrollHeight - container.clientHeight <= container.scrollTop + 20;
+      
+      container.innerHTML = html;
+      if (wasAtBottom) container.scrollTop = container.scrollHeight;
+    }
+  } catch(e) {} finally {
+    setTimeout(fetchLogs, 2000);
+  }
 }
 
-// Loop
+// Start Loops
 fetchStatus();
 fetchLogs();
-setInterval(fetchStatus, 3000); // 3 seconds is snappier
-setInterval(fetchLogs, 2000);   // Logs update faster
 </script>
 </body>
 </html>
