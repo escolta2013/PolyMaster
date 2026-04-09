@@ -257,8 +257,8 @@ from app.engines.wallet.manager import wallet_manager
             try:
                 res = order_mgr.create_and_post_order(
                     token_id=target_token,
-                    price=0.985, # Aggressive limit to take all lagging asks
-                    size=size_usdc / 0.985,
+                    price=settings.WEATHER_PRICE_BUFFER, # Aggressive limit to take all lagging asks
+                    size=size_usdc / settings.WEATHER_PRICE_BUFFER,
                     side="BUY"
                 )
                 if res.get("status") == "success":

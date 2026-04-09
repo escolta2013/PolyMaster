@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: Optional[str] = None
     OPENROUTER_API_KEY: Optional[str] = None
     AI_MODEL: str = "gpt-4o-mini"
+    COUNCIL_MAX_DAILY_CALLS: int = 300     # Max council calls per day
     BALLDONTLIE_API_KEY: Optional[str] = None
     ODDS_API_KEY: str = ""
     
@@ -79,6 +80,7 @@ class Settings(BaseSettings):
     WEATHER_SYNC_INTERVAL: int = 300      # Check weather data every 5 mins
     WEATHER_MIN_TEMP_DIFF: float = 1.0    # Execute if diff between NOAA and market is > 1.0°F/C (or threshold)
     WEATHER_MAX_BUDGET: float = 50.0      # Max USDC per weather trade
+    WEATHER_PRICE_BUFFER: float = 0.985   # Do not buy if price > this
 
     # Portfolio Protection
     COPY_MAX_PER_TRADE: float = 20.0

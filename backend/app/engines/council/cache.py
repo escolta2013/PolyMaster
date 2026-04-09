@@ -92,7 +92,8 @@ class CouncilCache:
         # Daily budget tracking
         self._daily_call_count = 0
         self._daily_reset_date = datetime.now(timezone.utc).date()
-        self._max_daily_calls = int(os.getenv("COUNCIL_MAX_DAILY_CALLS", "300"))
+        from app.core.config import settings
+        self._max_daily_calls = settings.COUNCIL_MAX_DAILY_CALLS
 
         # Stats
         self._hits = 0
