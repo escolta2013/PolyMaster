@@ -56,9 +56,11 @@ async def get_status():
     if time.time() - _WALLET_BALANCE_CACHE["last_updated"] > 60:
         try:
             if settings.PK:
-                acct = Account.from_key(settings.PK)
+                # If a proxy is configured, we must check the proxy's balance. Otherwise, checking the EOA.
+                target_address = settings.POLY_PROXY_ADDRESS if hasattr(settings, 'POLY_PROXY_ADDRESS') and settings.POLY_PROXY_ADDRESS else Account.from_key(settings.PK).address
+                
                 # This will return 100.0 if COPY_SIMULATION is True, or real balance if False
-                new_bal = wallet_manager.get_onchain_balance(acct.address)
+                new_bal = wallet_manager.get_onchain_balance(target_address)
                 if new_bal > 0 or not settings.COPY_SIMULATION:
                     usdc_balance = new_bal
                     _WALLET_BALANCE_CACHE["balance"] = usdc_balance
