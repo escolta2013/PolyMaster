@@ -74,11 +74,19 @@ class WalletManager:
                 logger.warning("Web3 not connected, cannot fetch on-chain balance")
                 return 0.0
 
-            usdc = self.w3.eth.contract(
-                address=Web3.to_checksum_address(USDC_ADDRESS), abi=USDC_ABI
+            # Native USDC
+            usdc_native = self.w3.eth.contract(
+                address=Web3.to_checksum_address("0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"), abi=USDC_ABI
             )
-            raw = usdc.functions.balanceOf(Web3.to_checksum_address(address)).call()
-            balance = raw / 10**6
+            bal_n = usdc_native.functions.balanceOf(Web3.to_checksum_address(address)).call()
+            
+            # Bridged USDC.e (which most Polymarket wallets use)
+            usdc_bridged = self.w3.eth.contract(
+                address=Web3.to_checksum_address("0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"), abi=USDC_ABI
+            )
+            bal_b = usdc_bridged.functions.balanceOf(Web3.to_checksum_address(address)).call()
+
+            balance = (bal_n + bal_b) / 10**6
 
             # Update Supabase Cache
             try:
