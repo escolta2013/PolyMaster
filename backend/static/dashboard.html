@@ -380,7 +380,7 @@ function renderTrades(trades) {
     
     if (c === 'WIN') { icon = 'WIN'; iClass = 'icon-win'; }
     else if (c === 'LOSS') { icon = 'LOSS'; iClass = 'icon-loss'; }
-    else if (d === 'EXECUTED' || d === 'WOULD_EXECUTE') { icon = 'EXEC'; iClass = 'icon-exec'; }
+    else if (d === 'EXECUTED' || d === 'WOULD_EXECUTE' || d === 'EXECUTED_LIVE') { icon = 'EXEC'; iClass = 'icon-exec'; }
     else if (d === 'REJECTED' || d === 'SKIPPED') { icon = 'REJ'; iClass = 'icon-rej'; }
 
     return `
