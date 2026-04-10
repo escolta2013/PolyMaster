@@ -3,48 +3,44 @@ import os
 import sys
 from pathlib import Path
 from dotenv import load_dotenv
+from eth_account import Account
 
 def debug():
-    print("--- PolyMaster Environment Diagnostic ---")
+    print("--- PolyMaster Wallet & Env Diagnostic ---")
     
-    # Check .env file
     env_path = Path(".env")
     if not env_path.exists():
-        print("❌ ERROR: .env file not found in current directory!")
+        print("❌ ERROR: .env file not found!")
         return
     
-    print(f"✅ Found .env file at: {env_path.absolute()}")
-    
-    # Load variables manually to test
     load_dotenv(env_path)
     
-    # Check RPCs
+    # Check Wallet
+    pk = os.getenv("PK")
+    proxy = os.getenv("POLY_PROXY_ADDRESS")
+    
+    print("\n--- Wallet Identity ---")
+    if not pk:
+        print("❌ ERROR: PK (Private Key) missing in .env!")
+    else:
+        # Derive Public Address
+        try:
+            acc = Account.from_key(pk)
+            derived_address = acc.address
+            print(f"Derived Address (from PK): {derived_address}")
+            print(f"Proxy Address (from .env): {proxy if proxy else 'NOT SET'}")
+            
+            # THE CRITICAL CHECK
+            active_address = proxy if proxy else derived_address
+            print(f"\n👉 THE BOT IS CHECKING THIS ADDRESS: {active_address}")
+            print("   (Verify this address on PolygonScan to see if it matches where your money is)")
+        except Exception as e:
+            print(f"❌ ERROR deriving address: {e}")
+
+    # Check RPCs again
     alchemy = os.getenv("ALCHEMY_RPC_URL")
-    infura = os.getenv("INFURA_RPC_URL")
-    polygon_public = os.getenv("POLYGON_RPC_URL")
+    print(f"\n--- Connectivity ---")
+    print(f"Alchemy present: {'✅' if alchemy else '❌'}")
     
-    print("\n--- RPC Configuration ---")
-    print(f"Alchemy URL: {'✅ PRESENT' if alchemy else '❌ MISSING (Using public fallback?)'}")
-    if alchemy: print(f"  Prefix: {alchemy[:25]}...")
-    
-    print(f"Infura URL: {'✅ PRESENT' if infura else '❌ MISSING'}")
-    if infura: print(f"  Prefix: {infura[:25]}...")
-    
-    # Check AI
-    ai_key = os.getenv("OPENAI_API_KEY")
-    ai_base = os.getenv("OPENAI_API_BASE")
-    ai_model = os.getenv("AI_MODEL")
-    
-    print("\n--- AI Configuration (OpenRouter) ---")
-    print(f"Base URL: {ai_base}")
-    print(f"Model: {ai_model}")
-    print(f"API Key: {'✅ PRESENT' if ai_key else '❌ MISSING'}")
-    if ai_key: print(f"  Prefix: {ai_key[:10]}...")
-
-    # Check Budget
-    weather_budget = os.getenv("WEATHER_MAX_BUDGET")
-    print("\n--- Logic Parameters ---")
-    print(f"Weather Budget: {weather_budget}")
-
 if __name__ == "__main__":
     debug()
