@@ -42,12 +42,14 @@ class PolymarketIndexer:
                 
                 valid = []
                 now_utc = datetime.now(timezone.utc)
+                is_paper = settings.COPY_SIMULATION
                 
                 # Coarse filter thresholds — asymmetric between Paper and Production:
                 # - Production: Fresh discovery (Age < 72h, Vol > $3k)
                 # - Paper Mode:  Calibration universe (No age limit, Vol > $1k)
-                age_limit = None if is_paper else timedelta(hours=72)
-                min_volume = 1000 if is_paper else 3000
+                # INCREASED LIMITS: 7 days instead of 72h, $1000 instead of $3000
+                age_limit = None if is_paper else timedelta(hours=168)
+                min_volume = 1000 if is_paper else 1000
                 
                 for m in data:
                     # LOCAL FILTERING: Robust type handling (sometimes Gamma returns strings)
