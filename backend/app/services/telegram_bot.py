@@ -98,13 +98,25 @@ class TelegramNotifier:
         )
         await self.notify(msg)
 
-    async def notify_status(self, balance: float, trades_24h: int, profit_24h: float) -> None:
-        """Periodic status update."""
+    async def trade_failed(self, market: str, outcome: str, error: str) -> None:
+        market_short = market[:60] + ("..." if len(market) > 60 else "")
         msg = (
-            f"📊 <b>ESTADO DEL BOT</b>\n"
+            f"❌ <b>FALLO EN EJECUCIÓN</b>\n"
+            f"🎯 <b>Mercado:</b> {market_short}\n"
+            f"✅ <b>Intento:</b> {outcome}\n"
+            f"⚠️ <b>Error:</b> {error}"
+        )
+        await self.notify(msg)
+
+    async def notify_status(self, balance: float, trades_24h: int, profit_24h: float, failures_24h: int = 0) -> None:
+        """Periodic status update."""
+        mode_tag = "🧪 SIMULACIÓN" if settings.COPY_SIMULATION else "⚡ LIVE"
+        msg = (
+            f"📊 <b>ESTADO DEL BOT ({mode_tag})</b>\n"
             f"──────────────\n"
             f"🏦 <b>Balance Wallet:</b> ${balance:,.2f} USDC\n"
             f"🔄 <b>Trades (24h):</b> {trades_24h}\n"
+            f"🔴 <b>Fallos (24h):</b> {failures_24h}\n"
             f"📈 <b>P&L (24h):</b> {profit_24h:+.2f} USDC\n"
             f"──────────────\n"
             f"Status: Corriendo ✅"

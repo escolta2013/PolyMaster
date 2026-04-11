@@ -600,8 +600,8 @@ async def autonomous_loop():
                     f"Scheduler Stats: {sched_stats['tracked_markets']} markets tracked"
                 )
 
-            # ── Step 9: Telegram Health Report (every 10 cycles ~10min) ─────
-            if cycle_count % 10 == 0:
+            # ── Step 9: Telegram Health Report (every 60 cycles ~1h) ────────
+            if cycle_count > 0 and cycle_count % 60 == 0:
                 try:
                     from app.engines.wallet.manager import wallet_manager
                     proxy_addr = settings.POLY_PROXY_ADDRESS
@@ -612,15 +612,14 @@ async def autonomous_loop():
                         try:
                             _sb = resolver._get_supabase()
                             day_ago = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
-                            _logs_24h = _sb.table("autonomous_logs").select("correct").gte("detected_at", day_ago).in_("decision", ["EXECUTED_LIVE", "EXECUTED_SIM", "WOULD_EXECUTE"]).execute().data
+                            _logs_24h = _sb.table("autonomous_logs").select("decision, correct").gte("detected_at", day_ago).execute().data or []
                             
-                            t24 = len(_logs_24h)
-                            w24 = sum(1 for r in _logs_24h if r["correct"] == "WIN")
-                            l24 = sum(1 for r in _logs_24h if r["correct"] == "LOSS")
+                            t24 = sum(1 for r in _logs_24h if r.get("decision") in ["EXECUTED_LIVE", "EXECUTED_SIM", "WOULD_EXECUTE"])
+                            f24 = sum(1 for r in _logs_24h if r.get("decision") in ["FAILED", "ERROR"])
+                            w24 = sum(1 for r in _logs_24h if r.get("correct") == "WIN")
+                            l24 = sum(1 for r in _logs_24h if r.get("correct") == "LOSS")
                             
-                            # Simple P&L estimate based on $20 average trade if real trades identified
-                            # For now just send wins/losses
-                            await telegram.notify_status(balance=balance, trades_24h=t24, profit_24h=(w24 - l24) * 20.0)
+                            await telegram.notify_status(balance=balance, trades_24h=t24, profit_24h=(w24 - l24) * 20.0, failures_24h=f24)
                         except Exception as e:
                             logger.error(f"Health Report stats failed: {e}")
                             await telegram.notify_status(balance=balance, trades_24h=0, profit_24h=0.0)

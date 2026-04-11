@@ -81,7 +81,7 @@ def get_status():
             exec_resp = (
                 sb.table("autonomous_logs")
                 .select("id, council_score, market_question, decision, correct, detected_at, outcome")
-                .in_("decision", ["EXECUTED", "WOULD_EXECUTE", "EXECUTED_LIVE", "REJECTED"])
+                .in_("decision", ["EXECUTED", "WOULD_EXECUTE", "EXECUTED_LIVE", "REJECTED", "FAILED", "ERROR"])
                 .gte("detected_at", today)
                 .order("detected_at", desc=True)
                 .limit(8)
@@ -138,11 +138,40 @@ def get_status():
     except Exception as e:
         logger.warning(f"[StatusRouter] Supabase error: {e}")
 
+    # ── Council stats from Supabase ──
+    council_calls_today = 0
+    cache_hits_today = 0
+    markets_analyzed_today = 0
+    tokens_saved_today = 0
+    
+    try:
+        if sb:
+            # Stats for the last 24h
+            stats_resp = (
+                sb.table("autonomous_logs")
+                .select("cache_hit, market_id")
+                .gte("detected_at", today)
+                .execute()
+            )
+            stats_data = stats_resp.data or []
+            
+            markets_analyzed_today = len(set(r.get("market_id") for r in stats_data))
+            cache_hits_today = sum(1 for r in stats_data if r.get("cache_hit") is True)
+            council_calls_today = sum(1 for r in stats_data if r.get("cache_hit") is False)
+            tokens_saved_today = cache_hits_today * 4000
+            
+            total_checks = len(stats_data)
+            hit_rate_val = (cache_hits_today / total_checks * 100) if total_checks > 0 else 0
+            cache_hit_rate_str = f"{hit_rate_val:.1f}%"
+    except Exception as e:
+        logger.warning(f"[StatusRouter] Council stats error: {e}")
+        cache_hit_rate_str = "--"
+
     return {
         "bot_running": True,
         "simulation_mode": settings.COPY_SIMULATION,
         "uptime_seconds": uptime_secs,
-        "cycle_count": None,  # Future: expose from loop
+        "cycle_count": None,
         # Wallet & Budget
         "wallet_balance_usdc": usdc_balance,
         "trades_today": trades_today,
@@ -152,13 +181,13 @@ def get_status():
         "wins_total": wins_total,
         "losses_total": losses_total,
         "pnl_usdc": round(pnl_usdc, 2),
-        # Council
-        "council_calls_today": council_cache._daily_call_count,
+        # Council (Unified from DB)
+        "council_calls_today": council_calls_today,
         "council_budget": settings.COUNCIL_MAX_DAILY_CALLS if hasattr(settings, "COUNCIL_MAX_DAILY_CALLS") else 300,
-        "cache_hit_rate": cache_stats.get("hit_rate", "--"),
-        "cached_markets": cache_stats.get("cached_markets", 0),
-        "tokens_saved": cache_stats.get("tokens_saved", 0),
-        "cost_saved": cache_stats.get("cost_saved", "--"),
+        "cache_hit_rate": cache_hit_rate_str,
+        "cached_markets": markets_analyzed_today,
+        "tokens_saved": f"~{tokens_saved_today:,}",
+        "cost_saved": f"~${(tokens_saved_today / 1000 * 0.005):.2f}",
         # Settings
         "confidence_threshold": settings.AUTONOMOUS_CONFIDENCE_THRESHOLD,
         "max_size_usdc": settings.AUTONOMOUS_MAX_SIZE,

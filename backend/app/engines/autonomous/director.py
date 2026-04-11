@@ -830,9 +830,11 @@ class DirectorAgent:
                     else:
                         decision_status = "FAILED"
                         logger.error(f"Director Execution Failed: {result.message}")
+                        await telegram.trade_failed(question, exec_outcome, result.message)
                 except Exception as e:
                     decision_status = "ERROR"
                     logger.error(f"Director Exception: {e}")
+                    await telegram.trade_failed(question, exec_outcome, str(e))
             else:
                 decision_status = "SKIPPED_NO_USER"
                 logger.error("Director: No AUTONOMOUS_USER_ID configured.")
