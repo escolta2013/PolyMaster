@@ -55,22 +55,43 @@ def get_status():
     usdc_balance = _WALLET_BALANCE_CACHE["balance"]
     if time.time() - _WALLET_BALANCE_CACHE["last_updated"] > 60:
         try:
-            if settings.PK:
-                # If a proxy is configured, we must check the proxy's balance. Otherwise, checking the EOA.
+            from app.core.client import PolyClient
+            from py_clob_client.clob_types import AssetType, BalanceAllowanceParams
+            
+            p_client = PolyClient.get_instance()
+            clob_bal = 0.0
+            
+            # Step 1: Try Internal CLOB Balance (The funds ready to trade)
+            try:
+                if p_client and p_client.sdk:
+                    clob_bal_raw = p_client.sdk.get_balance_allowance(BalanceAllowanceParams(asset_type=AssetType.COLLATERAL))
+                    clob_bal = float(clob_bal_raw.get("balance", 0)) / 10**6
+                    logger.debug(f"[StatusRouter] Internal CLOB Balance: ${clob_bal}")
+            except Exception as ce:
+                logger.warning(f"[StatusRouter] CLOB balance fetch failed: {ce}")
+
+            # Step 2: Try On-Chain Balance (Funds in wallet, not yet deposited)
+            chain_bal = 0.0
+            try:
                 target_address = settings.POLY_PROXY_ADDRESS if hasattr(settings, 'POLY_PROXY_ADDRESS') and settings.POLY_PROXY_ADDRESS else Account.from_key(settings.PK).address
-                
-                # This will return 100.0 if COPY_SIMULATION is True, or real balance if False
-                new_bal = wallet_manager.get_onchain_balance(target_address)
-                if new_bal > 0:
-                    usdc_balance = new_bal
-                    _WALLET_BALANCE_CACHE["balance"] = usdc_balance
-                    _WALLET_BALANCE_CACHE["last_updated"] = time.time()
-                elif new_bal == 0 and not settings.COPY_SIMULATION and _WALLET_BALANCE_CACHE["balance"] == 0:
-                    # Only accept 0 if we already had 0, to prevent random RPC failures from resetting it 
-                    usdc_balance = 0.0
-                    _WALLET_BALANCE_CACHE["last_updated"] = time.time()
-        except:
-            pass
+                chain_bal = wallet_manager.get_onchain_balance(target_address)
+                logger.debug(f"[StatusRouter] On-Chain Balance: ${chain_bal}")
+            except Exception as we:
+                logger.warning(f"[StatusRouter] On-chain balance fetch failed: {we}")
+
+            # Prioritize CLOB balance for the trading dashboard
+            final_bal = clob_bal if clob_bal > 0 else chain_bal
+            
+            # Always respect COPY_SIMULATION if it returns a fake balance (100.0)
+            if settings.COPY_SIMULATION and chain_bal == 100.0:
+                final_bal = 100.0
+
+            usdc_balance = final_bal
+            _WALLET_BALANCE_CACHE["balance"] = usdc_balance
+            _WALLET_BALANCE_CACHE["last_updated"] = time.time()
+            
+        except Exception as e:
+            logger.error(f"[StatusRouter] Critical balance update error: {e}")
 
     try:
         sb = _get_supabase()
