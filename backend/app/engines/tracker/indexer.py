@@ -49,7 +49,7 @@ class PolymarketIndexer:
                 # - Paper Mode:  Calibration universe (No age limit, Vol > $1k)
                 # INCREASED LIMITS: 7 days instead of 72h, $1000 instead of $3000
                 age_limit = None if is_paper else timedelta(hours=168)
-                min_volume = 1000 if is_paper else 1000
+                min_volume = 1000 if is_paper else 500
                 
                 for m in data:
                     # LOCAL FILTERING: Robust type handling (sometimes Gamma returns strings)
@@ -187,6 +187,20 @@ class PolymarketIndexer:
                         logger.info(f"Indexer Reject [D]: '{q[:30]}' (Depth {d:.1f} < {min_depth})")
                         continue
                     
+                    # Layer 4: Exclude NBA, Tennis and unpredictable categories
+                    _q_lower = q.lower()
+                    _nba_kw = ["nba", " vs ", " vs. ", "76ers", "celtics", "lakers",
+                        "warriors", "knicks", "nets", "bucks", "heat", "nuggets", "suns",
+                        "clippers", "grizzlies", "thunder", "mavs", "mavericks", "spurs",
+                        "rockets", "pistons", "pacers", "hawks", "hornets", "wizards",
+                        "magic", "raptors", "cavaliers", "timberwolves", "pelicans",
+                        "kings", "blazers", "okc", "bulls", "basketball", "total points"]
+                    _tennis_kw = ["tennis", " atp ", "wta ", "wimbledon", "roland garros",
+                        "us open", "australian open", "djokovic", "alcaraz", "sinner"]
+                    _excluded_kw = _nba_kw + _tennis_kw
+                    if any(k in _q_lower for k in _excluded_kw):
+                        logger.info(f"Indexer Reject [CAT]: '{q[:40]}' (excluded category)")
+                        continue
                     logger.success(f"Indexer Match: '{q[:40]}' | P={p:.3f} | S={s:.3f} | D={d:.1f}")
                     final_candidates.append(m)
 
