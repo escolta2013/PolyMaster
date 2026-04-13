@@ -30,10 +30,10 @@ class PolyClient:
             logger.info("Initializing fully authenticated PolyClient")
             # Step 1: Create temp client to derive or use creds
             is_proxy = hasattr(settings, 'POLY_PROXY_ADDRESS') and settings.POLY_PROXY_ADDRESS
-            # EOA is 0, Proxy can be 1 or 2. We'll start with 2 as most common for new accounts
-            # but we use 0 if there is no proxy.
-            sig_type = 2 if is_proxy else 0
-            funder = None  # EOA wallet — no proxy funder needed
+            # EOA is 0, Proxy is 1 or 2 — but ONLY if funder address is also set.
+            # sig_type=2 with funder=None generates an invalid EIP-712 hash → 400 invalid signature.
+            funder = settings.POLY_PROXY_ADDRESS if is_proxy else None
+            sig_type = 0  # Default: EOA (L1 key directly). Most reliable for standard accounts.
             
             logger.info(f"Connecting with sig_type={sig_type} and funder={funder}")
             
