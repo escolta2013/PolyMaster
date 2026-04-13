@@ -28,14 +28,40 @@ class PolyClient:
         
         if pk:
             logger.info("Initializing fully authenticated PolyClient")
-            # Step 1: Create temp client to derive or use creds
             is_proxy = hasattr(settings, 'POLY_PROXY_ADDRESS') and settings.POLY_PROXY_ADDRESS
-            # EOA is 0, Proxy is 1 or 2 — but ONLY if funder address is also set.
-            # sig_type=2 with funder=None generates an invalid EIP-712 hash → 400 invalid signature.
-            funder = settings.POLY_PROXY_ADDRESS if is_proxy else None
-            sig_type = 0  # Default: EOA (L1 key directly). Most reliable for standard accounts.
             
-            logger.info(f"Connecting with sig_type={sig_type} and funder={funder}")
+            # ── Signature Type Selection ──────────────────────────────────────
+            # sig_type=0 (EOA): Direct wallet signing. maker = address(PK).
+            # sig_type=1 (POLY_PROXY): Polymarket proxy wallet. maker = funder.
+            # sig_type=2 (GNOSIS_SAFE): Gnosis Safe. maker = funder.
+            #
+            # If POLY_PROXY_ADDRESS is set, the user's funds live in the PROXY,
+            # not in the EOA. We MUST use sig_type=1 so the order's `maker`
+            # field points to the proxy address (which has the USDC balance).
+            # Using sig_type=0 with a proxy account → 400 invalid signature
+            # because maker=EOA has no funds/allowances on the exchange.
+            # ──────────────────────────────────────────────────────────────────
+            if is_proxy:
+                sig_type = 1  # POLY_PROXY — PK signs, proxy wallet is the maker
+                funder = settings.POLY_PROXY_ADDRESS
+                logger.info(f"Proxy wallet detected. Using sig_type=1 (POLY_PROXY) with funder={funder}")
+            else:
+                sig_type = 0  # EOA — direct signing, no proxy
+                funder = None
+                logger.info("No proxy wallet. Using sig_type=0 (EOA)")
+            
+            # Helper: build API creds from .env or derive them
+            def _get_creds(client_instance):
+                if settings.CLOB_API_KEY and settings.CLOB_SECRET:
+                    from py_clob_client.clob_types import ApiCreds
+                    clob_key = settings.CLOB_API_KEY.replace('\r', '').replace('\n', '').strip(' "\'')
+                    clob_sec = settings.CLOB_SECRET.replace('\r', '').replace('\n', '').strip(' "\'')
+                    clob_pass = settings.CLOB_PASSPHRASE.replace('\r', '').replace('\n', '').strip(' "\'') if settings.CLOB_PASSPHRASE else ""
+                    logger.info("Using provided API credentials")
+                    return ApiCreds(clob_key, clob_sec, clob_pass)
+                else:
+                    logger.info("Deriving API credentials from PK...")
+                    return client_instance.create_or_derive_api_creds()
             
             try:
                 temp_client = PolymarketClobClient(
@@ -45,18 +71,7 @@ class PolyClient:
                     signature_type=sig_type,
                     funder=funder
                 )
-                
-                # Use provided creds if they exist, otherwise derive
-                if settings.CLOB_API_KEY and settings.CLOB_SECRET:
-                    from py_clob_client.clob_types import ApiCreds
-                    clob_key = settings.CLOB_API_KEY.replace('\r', '').replace('\n', '').strip(' "\'')
-                    clob_sec = settings.CLOB_SECRET.replace('\r', '').replace('\n', '').strip(' "\'')
-                    clob_pass = settings.CLOB_PASSPHRASE.replace('\r', '').replace('\n', '').strip(' "\'') if settings.CLOB_PASSPHRASE else ""
-                    creds = ApiCreds(clob_key, clob_sec, clob_pass)
-                    logger.info("Using provided API credentials")
-                else:
-                    logger.info("Deriving API credentials from PK...")
-                    creds = temp_client.create_or_derive_api_creds()
+                creds = _get_creds(temp_client)
                 
                 self.sdk = PolymarketClobClient(
                     host=self.host,
@@ -66,20 +81,29 @@ class PolyClient:
                     funder=funder,
                     creds=creds
                 )
-                logger.success(f"Authenticated SDK Client Ready (Type {sig_type})")
+                logger.success(f"Authenticated SDK Client Ready (Type {sig_type}, funder={funder})")
             except Exception as e:
-                logger.warning(f"Authentication failed with Type {sig_type}: {e}. Retrying with Type 1 if proxy...")
-                if is_proxy and sig_type == 2:
-                    try:
-                        sig_type = 1
-                        temp_client = PolymarketClobClient(host=self.host, key=pk, chain_id=chain_id, signature_type=sig_type, funder=funder)
-                        creds = temp_client.create_or_derive_api_creds()
-                        self.sdk = PolymarketClobClient(host=self.host, key=pk, chain_id=chain_id, signature_type=sig_type, funder=funder, creds=creds)
-                        logger.success("Authenticated SDK Client Ready (Type 1 Fallback)")
-                    except Exception as e2:
-                        logger.error(f"Ultimate authentication failure: {e2}")
-                        self.sdk = temp_client
-                else:
+                # ── Fallback Chain ─────────────────────────────────────────
+                # If primary sig_type fails, try the alternative:
+                #   sig_type=1 failed → try sig_type=0 (maybe PK IS the account)
+                #   sig_type=0 failed → try sig_type=1 (maybe it's a proxy after all)
+                alt_sig_type = 0 if sig_type == 1 else 1
+                alt_funder = None if alt_sig_type == 0 else (funder or settings.POLY_PROXY_ADDRESS if hasattr(settings, 'POLY_PROXY_ADDRESS') else None)
+                logger.warning(f"Authentication failed with Type {sig_type}: {e}. Trying Type {alt_sig_type} fallback...")
+                try:
+                    temp_client = PolymarketClobClient(
+                        host=self.host, key=pk, chain_id=chain_id,
+                        signature_type=alt_sig_type, funder=alt_funder
+                    )
+                    creds = _get_creds(temp_client)
+                    self.sdk = PolymarketClobClient(
+                        host=self.host, key=pk, chain_id=chain_id,
+                        signature_type=alt_sig_type, funder=alt_funder,
+                        creds=creds
+                    )
+                    logger.success(f"Authenticated SDK Client Ready (Type {alt_sig_type} FALLBACK, funder={alt_funder})")
+                except Exception as e2:
+                    logger.error(f"All authentication attempts failed: {e2}")
                     self.sdk = temp_client
         else:
             logger.info("Initializing Read-Only PolyClient")
@@ -90,20 +114,37 @@ class PolyClient:
         Creates a temporary authenticated ClobClient for a specific private key.
         Used for executing trades on behalf of proxy wallets.
         """
+        is_proxy = hasattr(settings, 'POLY_PROXY_ADDRESS') and settings.POLY_PROXY_ADDRESS
+        sig_type = 1 if is_proxy else 0
+        funder = settings.POLY_PROXY_ADDRESS if is_proxy else None
+        
         try:
-            # We use signature_type 1 (EOA) for proxy wallets
+            # ── Signature Type Selection ──────────────────────────────────────
+            # Match the logic in __init__ for consistency.
+            # ──────────────────────────────────────────────────────────────────
             client = PolymarketClobClient(
                 host=self.host,
                 key=pk,
                 chain_id=137,
-                signature_type=1
+                signature_type=sig_type,
+                funder=funder
             )
             # Derive API creds (L2 authentication)
-            # In a production scenario, we might want to cache these creds in the DB
             creds = client.create_or_derive_api_creds()
             client.set_api_creds(creds)
             return client
         except Exception as e:
+            # Fallback for EOA if sig_type=1 failed
+            if sig_type == 1:
+                logger.warning(f"Failed to create authenticated client as Proxy: {e}. Retrying as EOA...")
+                try:
+                    client = PolymarketClobClient(host=self.host, key=pk, chain_id=137, signature_type=0)
+                    creds = client.create_or_derive_api_creds()
+                    client.set_api_creds(creds)
+                    return client
+                except Exception as e2:
+                    logger.error(f"Failed all authenticated client attempts: {e2}")
+                    raise e2
             logger.error(f"Failed to create authenticated client: {e}")
             raise e
 

@@ -1,30 +1,14 @@
-"""
-Telegram Notification Service (Personal Bot Mode)
---------------------------------------------------
-Sends one-way push notifications to the admin chat.
-No multi-user SaaS logic — this is a personal trading bot.
-
-Events notified:
-  - Bot start / stop
-  - Trade executed
-  - Trade rejected (high-value rejections only)
-  - Trade resolved (WIN / LOSS)
-  - Stop-loss triggered
-  - Council budget warning (>90%)
-  - Critical loop errors
-"""
-
 import html
 import asyncio
-from typing import Optional
+from typing import Optional, List, Dict
 from app.core.config import settings
 from app.core.logging import logger
 
 
 class TelegramNotifier:
     """
-    Thin wrapper around the Telegram Bot API (via aiogram).
-    Sends plain text messages to TELEGRAM_ADMIN_CHAT_ID.
+    Thin wrapper around the Telegram Bot API (via aiogram/httpx).
+    Sends one-way push notifications to the admin chat.
     """
 
     def __init__(self):
@@ -41,8 +25,7 @@ class TelegramNotifier:
     async def notify(self, text: str) -> None:
         """
         Send a plain text message to the admin chat using HTTPX directly.
-        Always call with await; silently swallows errors to never crash the bot, 
-        but logs them clearly as warnings.
+        Always call with await; silently swallows errors to never crash the bot.
         """
         if not self._token or not self._chat_id:
             return
@@ -60,7 +43,7 @@ class TelegramNotifier:
                 resp = await client.post(url, json=payload, timeout=10.0)
                 if resp.status_code != 200:
                     data = resp.json()
-                    logger.warning(f"TelegramNotifier failed: {data.get('description', 'Unknown Error')}. (Make sure you clicked /start in the bot!)")
+                    logger.warning(f"TelegramNotifier failed: {data.get('description', 'Unknown Error')}")
         except Exception as e:
             logger.warning(f"TelegramNotifier request failed: {e}")
 

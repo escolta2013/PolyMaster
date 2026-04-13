@@ -120,14 +120,15 @@ class DirectorAgent:
             "spread", "handicap", "over/under", "o/u",
             "ncaa", "cornhuskers", "boilermakers", "purdue", "nebraska",
             # Price target verbs (2026-03-30) — catch "reach $", "hit $", etc.
-            "reach $", "hit $", "exceed $", "surpass $", "cross $",
+            "reach $", "hit $", "exceed $", "surpass $", "cross $", "above $", "below $",
+            "reach usd", "hit usd", "at least $", "at most $",
             # Crypto market cap / FDV markets (2026-03-30)
-            "market cap", " fdv", ">$", "one day after launch",
+            "market cap", " fdv", ">$", "one day after launch", "marketcap",
         ]
         _price_kw = [
             "close above $", "close below $", "be above $", "be below $",
             "be between $", "nvidia", "nvda", "share price", "stock price",
-            "above $180", "above $66,000", "above $100,000",
+            "above $180", "above $66,000", "above $100,000", "trading at $",
         ]
         # Exact temperature markets (2026-03-30): "be X°C on" / "be X°F on"
         # Council cannot predict exact degrees — only ranges have edge.
@@ -238,7 +239,7 @@ class DirectorAgent:
             recent_trade = supabase.table("autonomous_logs") \
                 .select("id") \
                 .eq("market_id", market_id) \
-                .in_("decision", ["EXECUTED", "WOULD_EXECUTE"]) \
+                .in_("decision", ["EXECUTED", "WOULD_EXECUTE", "EXECUTED_SIM", "EXECUTED_LIVE"]) \
                 .gte("detected_at", (datetime.now(timezone.utc) - timedelta(hours=12)).isoformat()) \
                 .execute()
             
@@ -471,9 +472,10 @@ class DirectorAgent:
 
                 # A. IMMINENT EVENT LOGIC (< 48h)
                 if timedelta(hours=0) < time_diff < timedelta(hours=48):
-                    required_confidence = max(0.45, self.min_confidence - 0.10) # Lower hurdle (Raul: changed floor from 0.55 to 0.45)
+                    # User Manual (Phase 5): Do not lower hurdle below 0.68.
+                    # We keep the flag for logging but enforce strict threshold.
                     is_imminent = True
-                    logger.info(f"Director: IMMINENT EVENT ({time_diff}). Lowering threshold to {required_confidence}")
+                    logger.info(f"Director: IMMINENT EVENT detected ({time_diff}). Hurdle strict at {required_confidence}")
 
                 # B. SNIPING STRATEGY (Short-Term Markets < 60m duration or ending very soon)
                 # If market ends in less than 60 mins AND we are not in the last 10 mins -> WAIT
@@ -602,91 +604,87 @@ class DirectorAgent:
             f"Min Edge Required: {effective_min_edge} [Source: {source}]"
         )
 
+        # ── Category Exclusion Filters (Empirically validated 2026-03-10) ──────
+        # NBA: EV=-0.162, n=234 — capital destroyer, excluded 2026-03-10
+        # Tennis: EV=-0.269, n=75 — capital destroyer, excluded 2026-03-10
+        # Up/Down crypto, box office, NCAA spreads: excluded 2026-03-11 (audit 48h)
+
+        # Group 1: eSports
+        esports_keywords = [
+            "dota 2", "lol:", "league of legends", "counter-strike", "valorant",
+            "esports", "dreamleague", "lck", "vct", "cs2", "cs:go",
+            "map 1 winner", "map 2 winner", "map handicap", "map winner",
+            "astral", "bounty hunters esports", "mindfreak",
+        ]
+        is_esports = any(kw in q_lower for kw in esports_keywords)
+
+        # Group 2: NBA (EV=-0.162, n=234)
+        nba_keywords = [
+            "nba", " vs ", " vs. ", "76ers", "sixers", "celtics", "lakers",
+            "warriors", "knicks", "nets", "bucks", "heat", "nuggets", "suns",
+            "clippers", "grizzlies", "thunder", "mavs", "mavericks", "spurs",
+            "rockets", "pistons", "pacers", "hawks", "hornets", "wizards",
+            "magic", "raptors", "cavaliers", "cavs", "timberwolves", "wolves",
+            "jazz", "pelicans", "kings", "blazers", "okc", "bulls", "basketball",
+        ]
+        is_nba = any(kw in q_lower for kw in nba_keywords)
+
+        # Group 3: Tennis (EV=-0.269, n=75)
+        tennis_keywords = [
+            "tennis", " atp ", "wta ", "grand slam", "wimbledon", "roland garros",
+            "us open", "australian open", "djokovic", "alcaraz", "sinner",
+            "medvedev", "swiatek", "sabalenka", "itf ", "challenger ",
+            "kigali", "antalya", "indian wells", "miami open",
+        ]
+        is_tennis = any(kw in q_lower for kw in tennis_keywords)
+
+        # Group 4: Unpredictable / noise markets (audit 2026-03-11)
+        unpredictable_keywords = [
+            "up or down", "up/down",
+            "price of bitcoin", "price of ethereum", "price of solana",
+            "box office", "opening weekend", "mrbeast", "tweets by",
+            "spread", "handicap", "over/under", "o/u",
+            "ncaa", "cornhuskers", "boilermakers", "purdue", "nebraska",
+        ]
+        is_unpredictable = any(kw in q_lower for kw in unpredictable_keywords)
+
+        # Group 5: Direct football winner
+        is_football_direct_winner = (
+            "win on 2026-" in q_lower and
+            "both teams" not in q_lower and
+            "o/u" not in q_lower and
+            "spread" not in q_lower
+        )
+
+        # Group 6: Specific crypto/stock price targets
+        is_specific_price_target = any(kw in q_lower for kw in [
+            "close above $", "close below $", "close at $",
+            "be above $", "be below $", "be between $",
+            "above $180", "above $66,000", "above $100,000",
+            "reach $", "hit $", "reach usd", "hit usd",
+            "nvda", "nvidia", "share price", "stock price", "marketcap", "market cap",
+        ])
+
+        excluded_reason = None
+        if is_esports:
+            excluded_reason = "esports_filter"
+        elif is_nba:
+            excluded_reason = "nba_excluded_ev_negative"
+        elif is_tennis:
+            excluded_reason = "tennis_excluded_ev_negative"
+        elif is_unpredictable:
+            excluded_reason = "unpredictable_variancy_excluded"
+        elif is_football_direct_winner:
+            excluded_reason = "football_direct_winner_filter"
+        elif is_specific_price_target:
+            excluded_reason = "specific_price_target_filter"
+
+        is_excluded = excluded_reason is not None
+
         # ── PAPER TRADING MODE ─────────────────────────────────────────────
         # Log WOULD_EXECUTE decisions for calibration without real execution.
         # Captures rich data for later analysis of Council accuracy.
-        #
-        # DEDUP GUARD: Only log to Supabase if:
-        #   (a) First time evaluating this market, OR
-        #   (b) Ask price changed by > 0.02 since last log (material change), OR
-        #   (c) Decision flipped (WOULD_EXECUTE ↔ PAPER_REJECTED)
-        # This prevents flooding Supabase with 800+ duplicate rows per session.
         if settings.PAPER_TRADING_MODE:
-            # ── Category Exclusion Filters (Empirically validated 2026-03-10) ──────
-            # NBA: EV=-0.162, n=234 — capital destroyer, excluded 2026-03-10
-            # Tennis: EV=-0.269, n=75 — capital destroyer, excluded 2026-03-10
-            # Up/Down crypto, box office, NCAA spreads: excluded 2026-03-11 (audit 48h)
-
-            # Group 1: eSports
-            esports_keywords = [
-                "dota 2", "lol:", "league of legends", "counter-strike", "valorant",
-                "esports", "dreamleague", "lck", "vct", "cs2", "cs:go",
-                "map 1 winner", "map 2 winner", "map handicap", "map winner",
-                "astral", "bounty hunters esports", "mindfreak",
-            ]
-            is_esports = any(kw in q_lower for kw in esports_keywords)
-
-            # Group 2: NBA (EV=-0.162, n=234)
-            nba_keywords = [
-                "nba", " vs ", " vs. ", "76ers", "sixers", "celtics", "lakers",
-                "warriors", "knicks", "nets", "bucks", "heat", "nuggets", "suns",
-                "clippers", "grizzlies", "thunder", "mavs", "mavericks", "spurs",
-                "rockets", "pistons", "pacers", "hawks", "hornets", "wizards",
-                "magic", "raptors", "cavaliers", "cavs", "timberwolves", "wolves",
-                "jazz", "pelicans", "kings", "blazers", "okc", "bulls", "basketball",
-            ]
-            is_nba = any(kw in q_lower for kw in nba_keywords)
-
-            # Group 3: Tennis (EV=-0.269, n=75)
-            tennis_keywords = [
-                "tennis", " atp ", "wta ", "grand slam", "wimbledon", "roland garros",
-                "us open", "australian open", "djokovic", "alcaraz", "sinner",
-                "medvedev", "swiatek", "sabalenka", "itf ", "challenger ",
-                "kigali", "antalya", "indian wells", "miami open",
-            ]
-            is_tennis = any(kw in q_lower for kw in tennis_keywords)
-
-            # Group 4: Unpredictable / noise markets (audit 2026-03-11)
-            unpredictable_keywords = [
-                "up or down", "up/down",
-                "price of bitcoin", "price of ethereum", "price of solana",
-                "box office", "opening weekend", "mrbeast", "tweets by",
-                "spread", "handicap", "over/under", "o/u",
-                "ncaa", "cornhuskers", "boilermakers", "purdue", "nebraska",
-            ]
-            is_unpredictable = any(kw in q_lower for kw in unpredictable_keywords)
-
-            # Group 5: Direct football winner
-            is_football_direct_winner = (
-                "win on 2026-" in q_lower and
-                "both teams" not in q_lower and
-                "o/u" not in q_lower and
-                "spread" not in q_lower
-            )
-
-            # Group 6: Specific crypto/stock price targets
-            is_specific_price_target = any(kw in q_lower for kw in [
-                "close above $", "close below $", "close at $",
-                "be above $", "be below $", "be between $",
-                "above $180", "above $66,000", "above $100,000",
-                "nvda", "nvidia", "share price", "stock price",
-            ])
-
-            excluded_reason = None
-            if is_esports:
-                excluded_reason = "esports_filter"
-            elif is_nba:
-                excluded_reason = "nba_excluded_ev_negative"
-            elif is_tennis:
-                excluded_reason = "tennis_excluded_ev_negative"
-            elif is_unpredictable:
-                excluded_reason = "unpredictable_variancy_excluded"
-            elif is_football_direct_winner:
-                excluded_reason = "football_direct_winner_filter"
-            elif is_specific_price_target:
-                excluded_reason = "specific_price_target_filter"
-
-            is_excluded = excluded_reason is not None
             paper_status = "WOULD_EXECUTE" if (edge_net >= effective_min_edge and not is_excluded) else "PAPER_REJECTED"
 
             if is_excluded and edge_net >= effective_min_edge:
@@ -785,7 +783,8 @@ class DirectorAgent:
         # Tight Execution Filter: 
         # 1. Score must pass confidence hurdle
         # 2. Net Edge must be at least 3% (0.03) to cover risk/slippage
-        if score >= required_confidence and edge_net >= 0.03:
+        # 3. Market must NOT be excluded by category filters
+        if score >= required_confidence and edge_net >= 0.03 and not is_excluded:
             # 4. Size Position
             base_size = settings.MIN_ORDER_SIZE_USD
             multiplier = 1.0 + (score - required_confidence) * 5

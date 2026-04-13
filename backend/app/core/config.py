@@ -32,8 +32,8 @@ class Settings(BaseSettings):
     ODDS_API_KEY: str = ""
     
     # Engine Settings
-    COPY_SIMULATION: bool = True
-    MIN_ORDER_SIZE_USD: float = 500.0
+    COPY_SIMULATION: bool = False
+    MIN_ORDER_SIZE_USD: float = 5.0
     
     # Wallet Manager Settings
     WALLET_ENCRYPTION_KEY: Optional[str] = None
@@ -46,18 +46,19 @@ class Settings(BaseSettings):
     TELEGRAM_ADMIN_CHAT_ID: Optional[str] = None
     
     # Autonomous Director Settings (Phase 5)
-    ENABLE_AUTONOMOUS_TRADING: bool = False
-    AUTONOMOUS_CONFIDENCE_THRESHOLD: float = 0.85
+    ENABLE_AUTONOMOUS_TRADING: bool = True
+    AUTONOMOUS_CONFIDENCE_THRESHOLD: float = 0.68
     AUTONOMOUS_USER_ID: Optional[str] = None  # The UUID of the "System Proxy Wallet"
-    AUTONOMOUS_MAX_SIZE: float = 50.0  # Max exposure per auto-trade
-    AUTONOMOUS_MAX_MARKET_DURATION_HOURS: int = 96 # Skip markets ending > 96h from now
-    AUTONOMOUS_CONFIDENCE_MAX: float = 0.75        # Cap for score in Kelly-like sizing
+    AUTONOMOUS_MAX_SIZE: float = 20.0  # Max exposure per auto-trade
+    AUTONOMOUS_MAX_MARKET_DURATION_HOURS: int = 48 # Skip markets ending > 48h from now
+    AUTONOMOUS_CONFIDENCE_MAX: float = 0.999        # Cap for score in Kelly-like sizing
     AUTONOMOUS_MIN_WALLETS: int = 2 # Min wallets to trigger a cluster alert
     
     # Paper Trading Mode (Calibration Phase)
     # When enabled, the Director logs WOULD_EXECUTE decisions with relaxed spread
     # filters but never actually executes trades. Used to gather calibration data.
-    PAPER_TRADING_MODE: bool = True
+    # Set to False for Production.
+    PAPER_TRADING_MODE: bool = False
     PAPER_TRADING_MAX_SPREAD: float = 0.15  # Stricter spread for production alignment
     PAPER_MIN_EDGE_NET: float = 0.05        # Min net edge after spread friction
     
@@ -67,7 +68,7 @@ class Settings(BaseSettings):
     REWARDS_ORDER_SIZE: float = 100.0  # Size in shares to farm rewards
 
     # Arbitrage Engine Settings
-    ENABLE_ARBITRAGE: bool = True          # Enable the arbitrage scanner
+    ENABLE_ARBITRAGE: bool = False          # Enable the arbitrage scanner
     ARB_MAX_SUM: float = 0.985            # Trigger threshold: sum of prices must be < this
     ARB_MIN_EDGE_PCT: float = 0.01        # Min 1% edge after fees to execute
     ARB_MAX_BUDGET_PER_BUNDLE: float = 50.0  # Max USDC to deploy per arb opportunity
