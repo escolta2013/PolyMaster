@@ -25,7 +25,7 @@ class PolymarketIndexer:
                 #                (freshness doesn't matter; we want real price discovery)
                 # - Production:  Order by createdAt to find fresh opportunities before the market forms
                 is_paper = settings.PAPER_TRADING_MODE
-                order_by = "volume" if is_paper else "createdAt"
+                order_by = "volume"
                 
                 params = {
                     "limit": 500,
@@ -44,12 +44,10 @@ class PolymarketIndexer:
                 now_utc = datetime.now(timezone.utc)
                 is_paper = settings.COPY_SIMULATION
                 
-                # Coarse filter thresholds — asymmetric between Paper and Production:
-                # - Production: Fresh discovery (Age < 72h, Vol > $3k)
-                # - Paper Mode:  Calibration universe (No age limit, Vol > $1k)
-                # INCREASED LIMITS: 7 days instead of 72h, $1000 instead of $3000
-                age_limit = None if is_paper else timedelta(hours=168)
-                min_volume = 1000 if is_paper else 500
+                # Coarse filter thresholds — Relaxed for Production debugging
+                age_limit = None
+                min_volume = 100
+
                 
                 for m in data:
                     # LOCAL FILTERING: Robust type handling (sometimes Gamma returns strings)
@@ -154,9 +152,10 @@ class PolymarketIndexer:
                 stats = {"price_fail": 0, "spread_fail": 0, "depth_fail": 0}
                 
                 # Paper Mode: Relax filters to get more calibration data
-                min_p = 0.10 if is_paper else 0.20
-                max_p = 0.90 if is_paper else 0.80
+                min_p = 0.15 
+                max_p = 0.85
                 max_spread = settings.PAPER_TRADING_MAX_SPREAD if settings.PAPER_TRADING_MODE else 0.15
+
                 
                 for m in verified_results:
                     if m is None: 
