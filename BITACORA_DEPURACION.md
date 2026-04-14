@@ -75,3 +75,19 @@ Este documento registra los cambios realizados al bot durante su ejecución loca
   - Corregidos parámetros booleanos (`ascending`: `false` → `False`).
 - **Razón:** Polymarket activó una migración obligatoria con fecha límite 1 de mayo de 2026. La API antigua basada en `offset` será desactivada. Al migrar hoy, garantizamos que el bot no se quede "ciego" cuando cierren los endpoints viejos.
 - **Efecto esperado:** Funcionamiento fluido y estabilidad a largo plazo. El Indexer y los motores de escaneo ya están listos para la nueva infraestructura de Polymarket.
+
+---
+
+**9. Limpieza Final y Verificación Keyset API (14 de Abril de 2026)**
+- **Archivos modificados:**
+  - `backend/app/engines/weather/manager.py`
+  - `backend/app/engines/arbitrage/manager.py`
+  - `backend/run_autonomous_loop.py` (OutcomeResolver)
+  - `backend/.env` (OpenRouter Key)
+- **Cambios realizados:**
+  - Migración completa de los motores restantes (`weather_manager.py`, `arbitrage/manager.py`) para usar `/markets/keyset` y `/events/keyset`.
+  - Corrección de tipos: Se eliminaron los parámetros booleanos en formato string (`"true"`/`"false"`) y se reemplazaron por tipos nativos de Python (`True`/`False`) en todas las llamadas a la API Gamma.
+  - Actualización del `OutcomeResolver` en `run_autonomous_loop.py` para buscar mercados vía `/markets/keyset`, asegurando la compatibilidad post-1 de mayo.
+  - Configuración de la nueva OpenRouter API Key y verificación del modelo `google/gemma-4-31b-it:free`.
+- **Razón:** Completar la migración obligatoria de Polymarket y asegurar que todos los componentes del sistema utilicen los estándares de la nueva API.
+- **Efecto esperado:** Estabilidad total ante el cambio del 1 de mayo y capacidad de análisis de IA restaurada en EC2.

@@ -325,16 +325,17 @@ class ArbManager:
             async with httpx.AsyncClient() as http:
                 # Categorical markets are usually under parent "events"
                 # They have > 2 clobTokenIds.
-                url = f"{self.gamma_api}/events"
+                url = f"{self.gamma_api}/events/keyset"
                 params = {
                     "limit": 50,
                     "order": "volume",
-                    "ascending": "false",
-                    "active": "true",
+                    "ascending": False,
+                    "active": True,
                 }
                 resp = await http.get(url, params=params, timeout=15)
                 resp.raise_for_status()
-                events = resp.json()
+                res_data = resp.json()
+                events = res_data.get("events", [])
 
             logger.info(f"Arbitrage: Scanning {len(events)} events for bundle arb...")
 

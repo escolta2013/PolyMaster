@@ -242,15 +242,23 @@ class OutcomeResolver:
                     errors += 1
                     continue
                 try:
-                    # Use HTTPS and ensure correct URL
-                    url = f"{self.GAMMA_BASE}/markets/{market_id}"
-                    r = await client.get(url)
+                    # Use Keyset API for robust market lookup
+                    url = f"{self.GAMMA_BASE}/markets/keyset"
+                    params = {"id": market_id}
+                    r = await client.get(url, params=params)
                     if r.status_code != 200:
-                        logger.debug(f"[RESOLVER] Market {market_id} returned {r.status_code} — skipping.")
+                        logger.debug(f"[RESOLVER] Keyset API error for {market_id}: {r.status_code}")
                         still_pending += 1
                         continue
 
-                    data = r.json()
+                    res_data = r.json()
+                    markets = res_data.get("markets", [])
+                    if not markets:
+                        logger.debug(f"[RESOLVER] Market {market_id} not found in keyset results.")
+                        still_pending += 1
+                        continue
+                        
+                    data = markets[0]
                     is_closed = str(data.get("closed", "")).lower() == "true"
                     resolved_price = None
 

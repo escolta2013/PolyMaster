@@ -68,10 +68,10 @@ class WeatherManager:
         async with httpx.AsyncClient() as http:
             # Polymarket use tags or search
             params = {
-                "active": "true",
+                "active": True,
                 "limit": 50,
                 "order": "volume",
-                "ascending": "false",
+                "ascending": False,
                 # Hardcoded tags or keyword search in titles
             }
             url = f"{self.gamma_api}/markets/keyset"
