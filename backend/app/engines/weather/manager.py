@@ -6,6 +6,7 @@ from typing import List, Dict, Optional, Any
 from datetime import datetime, timezone
 from app.core.client import PolyClient
 from app.core.config import settings
+from app.engines.ghost.order_manager import OrderManager
 
 class WeatherManager:
     """
@@ -43,6 +44,7 @@ class WeatherManager:
 
     def __init__(self):
         self.client = PolyClient.get_instance()
+        self.order_mgr = OrderManager()  # Authenticated order placement (same as Ghost engine)
         self.gamma_api = settings.GAMMA_API_URL
         self._last_scan = {} # market_id -> last_checked
         self.executed_markets = set() # Dedup guard against infinite executions
@@ -280,7 +282,7 @@ class WeatherManager:
         else:
             # Execution logic
             try:
-                res = order_mgr.create_and_post_order(
+                res = self.order_mgr.create_and_post_order(
                     token_id=target_token,
                     price=settings.WEATHER_PRICE_BUFFER, # Aggressive limit to take all lagging asks
                     size=size_usdc / settings.WEATHER_PRICE_BUFFER,

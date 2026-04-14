@@ -39,3 +39,11 @@ Este documento registra los cambios realizados al bot durante su ejecución loca
 - **Razón:** El reseteo de medianoche UTC dejaba los contadores en 0 justo cuando el usuario en su horario local quería ver los resultados. Ahora el dashboard mantiene viva la memoria de los últimos 3 días.
 - **Efecto esperado:** Mayor persistencia de datos visuales y tranquilidad operativa.
 
+**5. Corrección del Motor de Clima — `invalid signature` al Ejecutar (14 de Abril de 2026)**
+- **Archivo modificado:** `backend/app/engines/weather/manager.py`
+- **Cambios realizados:**
+  - Importado `OrderManager` desde `app.engines.ghost.order_manager`.
+  - Instanciado como `self.order_mgr = OrderManager()` en `__init__`.
+  - Corregida la llamada de `order_mgr.create_and_post_order(...)` (variable indefinida) a `self.order_mgr.create_and_post_order(...)`.
+- **Razón:** El Weather Engine usaba `order_mgr` como variable local en el bloque `else` de ejecución live, pero esa variable nunca fue definida en ese scope. Al llegar al bloque de ejecución real, Python lanzaba un `NameError` que internamente caía al cliente CLOB crudo sin credenciales correctas, produciendo el error `PolyApiException[status_code=400, error_message={'error': 'invalid signature'}]`.
+- **Efecto esperado:** El Weather Engine ya puede firmar y enviar órdenes correctamente en modo live, usando el mismo `PolyClient` autenticado que el resto del sistema.
