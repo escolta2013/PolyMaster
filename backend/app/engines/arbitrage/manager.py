@@ -212,16 +212,16 @@ class ArbManager:
         try:
             async with httpx.AsyncClient() as http:
                 # Fetch active markets with multiple tokens (binary = exactly 2 token IDs)
-                url = f"{self.gamma_api}/markets"
+                url = f"{self.gamma_api}/markets/keyset"
                 params = {
                     "limit": 100,
-                    "order": "volume",
-                    "ascending": "false",
-                    "active": "true",
+                    "ascending": False,
+                    "active": True,
                 }
                 resp = await http.get(url, params=params, timeout=15)
                 resp.raise_for_status()
-                markets = resp.json()
+                res_data = resp.json()
+                markets = res_data.get("markets", [])
 
             logger.info(f"Arbitrage: Scanning {len(markets)} markets for binary arb...")
 

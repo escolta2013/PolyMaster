@@ -25,19 +25,37 @@ class PolymarketIndexer:
                 #                (freshness doesn't matter; we want real price discovery)
                 # - Production:  Order by createdAt to find fresh opportunities before the market forms
                 is_paper = settings.PAPER_TRADING_MODE
-                order_by = "volume"
+                all_markets = []
+                cursor = None
+                url = f"{self.base_url}/markets/keyset"
                 
-                params = {
-                    "limit": 500,
-                    "order": order_by,
-                    "ascending": "false",
-                    "active": "true",
-                    "closed": "false"
-                }
-                url = f"{self.base_url}/markets"
-                response = await client.get(url, params=params, timeout=20.0)
-                response.raise_for_status()
-                data = response.json()
+                # keyset pagination loop to fetch up to 500 markets safely
+                target_total = 500
+                while len(all_markets) < target_total:
+                    params = {
+                        "limit": 100,
+                        "ascending": False,
+                        "active": True
+                    }
+                    if cursor:
+                        params["after_cursor"] = cursor
+                        
+                    response = await client.get(url, params=params, timeout=20.0)
+                    if response.status_code != 200:
+                        logger.warning(f"Indexer: Keyset API error {response.status_code}")
+                        break
+                        
+                    res_data = response.json()
+                    page = res_data.get("markets", [])
+                    if not page:
+                        break
+                        
+                    all_markets.extend(page)
+                    cursor = res_data.get("next_cursor")
+                    if not cursor:
+                        break
+                
+                data = all_markets
 
                 
                 valid = []
@@ -230,17 +248,14 @@ class PolymarketIndexer:
         """
         async with httpx.AsyncClient() as client:
             try:
-                url = f"{self.base_url}/markets"
-                # Polymarket Gamma API uses 'liquidity_rewards' or similar. 
-                # Checking for rewards is usually done by filtering or checking the field.
+                url = f"{self.base_url}/markets/keyset"
                 params = {
                     "limit": limit,
-                    "order": "volume",
-                    "ascending": "false",
-                    "closed": "false"
+                    "active": True
                 }
                 response = await client.get(url, params=params, timeout=10)
-                all_markets = response.json()
+                all_raw = response.json()
+                all_markets = all_raw.get("markets", [])
                 
                 # Filter markets with rewards > 0
                 r_markets = [

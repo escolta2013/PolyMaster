@@ -258,11 +258,11 @@ class DirectorAgent:
             # If we have token_id (asset ID), use it - most reliable for positions
             if token_id and len(token_id) > 10:
                 params = {"clob_token_ids": token_id}
-                url = "https://gamma-api.polymarket.com/markets"
+                url = "https://gamma-api.polymarket.com/markets/keyset"
             # Fallback to condition_id (market_id from cluster), usually returns multiple markets
             elif len(market_id) > 10: 
                 params = {"condition_id": market_id}
-                url = "https://gamma-api.polymarket.com/markets"
+                url = "https://gamma-api.polymarket.com/markets/keyset"
             else:
                 # Numeric ID
                 params = {}
@@ -272,8 +272,15 @@ class DirectorAgent:
                 resp = await client.get(url, params=params, timeout=10.0)
                 if resp.status_code == 200:
                     m_data = resp.json()
-                    # Gamma returns list for query params, dict for direct ID
-                    if isinstance(m_data, list):
+                    # Gamma keyset returns dict with 'markets' key
+                    if isinstance(m_data, dict) and "markets" in m_data:
+                        m_list = m_data["markets"]
+                        if not m_list: 
+                            logger.warning(f"Director: No market found for ID {market_id}")
+                            return {"status": "skipped", "reason": "market_not_found"}
+                        m_data = m_list[0]
+                    # Legacy support / Direct ID fallback
+                    elif isinstance(m_data, list):
                         if not m_data: 
                             logger.warning(f"Director: No market found for ID {market_id}")
                             return {"status": "skipped", "reason": "market_not_found"}

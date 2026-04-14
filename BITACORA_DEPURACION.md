@@ -62,3 +62,16 @@ Este documento registra los cambios realizados al bot durante su ejecución loca
   - Ahora usa `settings.PAPER_TRADING_MAX_SPREAD` (`0.15` en el `.env`) en ambos modos.
 - **Razón:** El Director usaba un spread máximo de `0.05` en modo live que era más estricto que el Indexer (`spread < 0.15`). Esta contradicción hacía que mercados pre-validados como "Belgium advance Eurovision" (spread 0.06) fueran rechazados después de haber pasado todos los demás filtros. Era el último cuello de botella.
 - **Efecto esperado:** En el próximo ciclo, el bot enviará mercados al Concilio de IA y se producirá el primer `EXECUTED` o `REJECTED (Council score insuficiente)`.
+
+**8. Migración Crítica de Paginación API Gamma (Keyset/Cursor) (14 de Abril de 2026)**
+- **Archivos modificados:**
+  - `backend/app/engines/tracker/indexer.py`
+  - `backend/app/engines/autonomous/director.py`
+  - `backend/app/engines/ghost/scanner.py`
+  - `backend/app/engines/arbitrage/manager.py`
+- **Cambios realizados:**
+  - Actualizados todos los endpoints `/markets` con query params a `/markets/keyset`.
+  - Ajustada la lógica de respuesta para parsear el nuevo objeto `{"markets": [...]}`.
+  - Corregidos parámetros booleanos (`ascending`: `false` → `False`).
+- **Razón:** Polymarket activó una migración obligatoria con fecha límite 1 de mayo de 2026. La API antigua basada en `offset` será desactivada. Al migrar hoy, garantizamos que el bot no se quede "ciego" cuando cierren los endpoints viejos.
+- **Efecto esperado:** Funcionamiento fluido y estabilidad a largo plazo. El Indexer y los motores de escaneo ya están listos para la nueva infraestructura de Polymarket.

@@ -74,12 +74,13 @@ class WeatherManager:
                 "ascending": "false",
                 # Hardcoded tags or keyword search in titles
             }
-            url = f"{self.gamma_api}/markets"
+            url = f"{self.gamma_api}/markets/keyset"
             resp = await http.get(url, params=params, timeout=10)
             if resp.status_code != 200:
                 return []
                 
-            all_m = resp.json()
+            res_data = resp.json()
+            all_m = res_data.get("markets", [])
             # Filter for keywords in question
             weather_keywords = ["temperature", "highest temperature", "rain", "precipitation", "snow"]
             return [

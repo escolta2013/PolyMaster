@@ -23,15 +23,14 @@ class MarketScanner:
         async with httpx.AsyncClient() as client:
             try:
                 params = {
-                    "active": "true",
-                    "closed": "false",
-                    "order": "volume",
-                    "ascending": "false",
+                    "active": True,
+                    "ascending": False,
                     "limit": 30
                 }
-                resp = await client.get(f"{self.base_url}/markets", params=params, timeout=10)
+                resp = await client.get(f"{self.base_url}/markets/keyset", params=params, timeout=10)
                 resp.raise_for_status()
-                raw_markets = resp.json()
+                res_data = resp.json()
+                raw_markets = res_data.get("markets", [])
                 
                 results = []
                 for m in raw_markets:
