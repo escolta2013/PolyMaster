@@ -96,7 +96,8 @@ def get_status():
     try:
         sb = _get_supabase()
         if sb:
-            today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+            # 72-hour rolling window instead of UTC midnight reset
+            today = (datetime.now(timezone.utc) - timedelta(days=3)).isoformat()
 
             # Trades executed today
             exec_resp = (
