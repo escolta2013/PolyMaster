@@ -23,7 +23,6 @@ Este documento registra los cambios realizados al bot durante su ejecución loca
 - **Efecto esperado:** Si el bot decide apostar, lo hará con posiciones máximas de $1.5 USD para permitir hasta 3 intentos diferentes.
 
 ---
-*(Nuevos cambios se agregarán aquí abajo a medida que avancemos)*
 
 **3. Corrección de Identidad de Billetera (Proxy Address)**
 - **Archivo modificado:** `backend/.env`
@@ -47,3 +46,19 @@ Este documento registra los cambios realizados al bot durante su ejecución loca
   - Corregida la llamada de `order_mgr.create_and_post_order(...)` (variable indefinida) a `self.order_mgr.create_and_post_order(...)`.
 - **Razón:** El Weather Engine usaba `order_mgr` como variable local en el bloque `else` de ejecución live, pero esa variable nunca fue definida en ese scope. Al llegar al bloque de ejecución real, Python lanzaba un `NameError` que internamente caía al cliente CLOB crudo sin credenciales correctas, produciendo el error `PolyApiException[status_code=400, error_message={'error': 'invalid signature'}]`.
 - **Efecto esperado:** El Weather Engine ya puede firmar y enviar órdenes correctamente en modo live, usando el mismo `PolyClient` autenticado que el resto del sistema.
+
+**6. Expansión del Horizonte de Mercados (14 de Abril de 2026)**
+- **Archivo modificado:** `backend/.env`
+- **Cambios realizados:**
+  - `AUTONOMOUS_MAX_MARKET_DURATION_HOURS` de `48` → `720` (30 días).
+  - `AUTONOMOUS_MAX_SIZE` de `5.0` → `1.5` (confirmado para proteger presupuesto de $5).
+- **Razón:** El Director analizaba los 15 mercados del Indexer en cada ciclo pero los rechazaba a TODOS porque ninguno cierra dentro de 48h. El mercado de Polymarket con buena liquidez y precio equilibrado (0.15-0.85) tiende a tener horizontes de semanas o meses. Con 48h el bot es un francotirador mirando por la mirilla con la lente tapada. Ahora con 30 días (720h), mercados como "West Ham relegado" (42d), "Czechia Eurovision" (31d) e "Israel-Líbano normalize" serán analizados por el Concilio de IA.
+- **Efecto esperado:** En el próximo ciclo el Director debería pasar de "15 markets analyzed → 0 proceeded" a "N markets sent to Council AI". El primer trade vivo debería ocurrir en las próximas horas.
+
+**7. Eliminación del Límite de Spread Hardcodeado — Liquidity Trap (14 de Abril de 2026)**
+- **Archivo modificado:** `backend/app/engines/autonomous/director.py` (línea 365)
+- **Cambios realizados:**
+  - Eliminado límite de spread en modo live hardcodeado a `0.05`.
+  - Ahora usa `settings.PAPER_TRADING_MAX_SPREAD` (`0.15` en el `.env`) en ambos modos.
+- **Razón:** El Director usaba un spread máximo de `0.05` en modo live que era más estricto que el Indexer (`spread < 0.15`). Esta contradicción hacía que mercados pre-validados como "Belgium advance Eurovision" (spread 0.06) fueran rechazados después de haber pasado todos los demás filtros. Era el último cuello de botella.
+- **Efecto esperado:** En el próximo ciclo, el bot enviará mercados al Concilio de IA y se producirá el primer `EXECUTED` o `REJECTED (Council score insuficiente)`.

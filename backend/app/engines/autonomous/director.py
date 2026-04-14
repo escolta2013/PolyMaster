@@ -362,7 +362,8 @@ class DirectorAgent:
                 current_price = best_ask
 
             # Liquidity Trap Protection: Skip if spread is too wide
-            max_spread_limit = settings.PAPER_TRADING_MAX_SPREAD if settings.PAPER_TRADING_MODE else 0.05
+            # Uses PAPER_TRADING_MAX_SPREAD for both paper and live (configurable from .env)
+            max_spread_limit = settings.PAPER_TRADING_MAX_SPREAD
             if spread > max_spread_limit:
                 logger.warning(f"Director: LIQUIDITY TRAP detected on {question[:30]} (Spread: {spread:.4f} > {max_spread_limit}). Skipping.")
                 return {"status": "skipped", "reason": "liquidity_trap", "spread": spread}
