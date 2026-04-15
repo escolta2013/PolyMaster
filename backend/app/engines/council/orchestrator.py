@@ -131,6 +131,19 @@ Reasoning: ... | 0.5
                 }
             except Exception as e:
                 err_msg = str(e).lower()
+                err_str = str(e)
+
+                # ── FATAL: Invalid API key — do NOT retry, do NOT return 0.5 silently ──
+                # A 401 means every subsequent call will also fail. Raise immediately so
+                # the orchestrator can abort the entire council session and log clearly.
+                if "401" in err_str or "incorrect api key" in err_msg or "invalid api key" in err_msg:
+                    logger.critical(
+                        f"🔑 COUNCIL FATAL: Agent {self.name} received HTTP 401 — "
+                        f"OPENAI_API_KEY is invalid or expired. "
+                        f"Fix the key in backend/.env and restart. Error: {err_str[:120]}"
+                    )
+                    raise RuntimeError(f"Council aborted: invalid API key (401). {err_str[:80]}")
+
                 if "rate limit" in err_msg or "429" in err_msg:
                     if attempt < max_retries - 1:
                         logger.warning(f"Agent {self.name} hit rate limit. Retrying in {retry_delay}s... (Attempt {attempt+1}/{max_retries})")
@@ -158,8 +171,19 @@ class AgentOrchestrator:
     Council Orchestrator: Manages the AI Swarm using standardized settings.
     """
     def __init__(self):
-        api_key = settings.OPENAI_API_KEY or settings.OPENROUTER_API_KEY
-        base_url = "https://openrouter.ai/api/v1" if settings.OPENROUTER_API_KEY else None
+        # Prefer OpenRouter key if present (allows using any model), fallback to OpenAI
+        if settings.OPENROUTER_API_KEY:
+            api_key = settings.OPENROUTER_API_KEY
+            base_url = "https://openrouter.ai/api/v1"
+            logger.info("Council: Using OpenRouter as LLM backend.")
+        elif settings.OPENAI_API_KEY:
+            api_key = settings.OPENAI_API_KEY
+            base_url = None
+            logger.info("Council: Using OpenAI as LLM backend.")
+        else:
+            api_key = None
+            base_url = None
+
         model = settings.AI_MODEL
 
         if api_key:
@@ -200,6 +224,8 @@ class AgentOrchestrator:
             ]
             logger.warning("Council in Simulation Mode (No LLM API Key)")
             
+        self._api_key = api_key
+        self._model = model
         self.consensus_threshold = 0.66
         self.divergence_threshold = 0.25 # StdDev high alert
         self.supabase: Client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
@@ -207,6 +233,35 @@ class AgentOrchestrator:
         # Integration from Polymarket/agents (News & Search)
         from app.services.news_fetcher import CryptoPanicFetcher
         self.news_fetcher = CryptoPanicFetcher()
+
+    async def validate_api_key(self) -> bool:
+        """
+        Sends a minimal cheap request to verify the API key works.
+        Call this at startup or after config changes. Returns True if key is valid.
+        Logs a CRITICAL warning if the key is invalid so the problem is immediately visible.
+        """
+        if not self._api_key:
+            logger.warning("Council: No API key configured — running in simulation mode.")
+            return False
+        try:
+            from openai import AsyncOpenAI
+            base_url = "https://openrouter.ai/api/v1" if settings.OPENROUTER_API_KEY else None
+            client = AsyncOpenAI(api_key=self._api_key, base_url=base_url)
+            # Cheapest possible call: just list available models
+            await client.models.list()
+            logger.success(f"🔑 Council API key validated OK — model: {self._model}")
+            return True
+        except Exception as e:
+            err = str(e)
+            if "401" in err or "incorrect" in err.lower() or "invalid" in err.lower():
+                logger.critical(
+                    f"🔑 COUNCIL API KEY INVALID (401) — All council scores will be 0.5 (useless). "
+                    f"Update OPENAI_API_KEY or OPENROUTER_API_KEY in backend/.env and restart. "
+                    f"Error: {err[:150]}"
+                )
+            else:
+                logger.error(f"Council API key validation failed: {err[:150]}")
+            return False
 
     async def fetch_news_context(self, question: str) -> str:
         """
@@ -536,6 +591,8 @@ class AgentOrchestrator:
         Deliberative Council with Conflict Arbitration (Quant-Grade).
         Pass 1: Specialists analyze.
         Pass 2: Risk Arbiter mediates based on tiers.
+        Raises RuntimeError if the API key is invalid (401) so the Director can log
+        FAILED instead of silently storing a worthless 0.5 score.
         """
         logger.info(f"Initiating High-Fidelity Consensus for: {market_data.get('question')[:50]}...")
         
@@ -553,9 +610,11 @@ class AgentOrchestrator:
                 market_data['enhanced_context'] = f"{market_data['context']}\n{combined_context}"
 
         # 1. Specialist Pass (Parallel)
+        # NOTE: If any agent raises RuntimeError (e.g., 401 invalid key), it propagates
+        # up to the caller (Director) which logs FAILED and skips caching the bad score.
         specialist_agents = [a for a in self.agents if a.name != "RiskArbiter"]
         tasks = [agent.analyze(market_data, context=market_data.get('enhanced_context')) for agent in specialist_agents]
-        specialist_results = await asyncio.gather(*tasks)
+        specialist_results = await asyncio.gather(*tasks, return_exceptions=False)
         
         # Extract Specialist Metrics
         confidences = [r['confidence'] for r in specialist_results]

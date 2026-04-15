@@ -443,22 +443,67 @@ class DirectorAgent:
                 logger.warning(f"Director: {budget_msg}. Skipping analysis for '{question[:40]}'.")
                 return {"status": "skipped", "reason": "daily_ai_budget_exhausted"}
 
-            consensus = await self.council.get_market_consensus(market_context)
+            try:
+                consensus = await self.council.get_market_consensus(market_context)
+            except RuntimeError as council_fatal_err:
+                # Council raised a fatal error (e.g. HTTP 401 invalid API key).
+                # Do NOT cache this result — it would poison every future cache hit
+                # with a useless 0.5 score that can NEVER trigger execution.
+                logger.critical(
+                    f"🔑 Director: Council FATAL error for '{question[:50]}' — "
+                    f"Skipping execution AND caching. Fix the API key. Error: {council_fatal_err}"
+                )
+                from supabase import create_client as _sb_create
+                try:
+                    _sb = _sb_create(settings.SUPABASE_URL, settings.SUPABASE_KEY)
+                    _sb.table("autonomous_logs").insert({
+                        "market_id": market_id,
+                        "market_question": question,
+                        "outcome": outcome,
+                        "council_score": None,
+                        "decision": "FAILED",
+                        "reasoning": {"error": str(council_fatal_err)[:200], "cause": "council_api_key_invalid"},
+                        "best_ask": best_ask,
+                        "best_bid": best_bid,
+                        "spread": round(spread, 4),
+                        "source": source,
+                        "cache_hit": False,
+                    }).execute()
+                except Exception:
+                    pass
+                return {"status": "failed", "reason": "council_fatal_error", "error": str(council_fatal_err)}
+
             # Defensive normalization: ensure consensus is always a dict
             if not isinstance(consensus, dict):
                 logger.warning(f"Director: Council returned non-dict ({type(consensus).__name__}). Wrapping as empty consensus.")
                 consensus = {"final_score": 0.0, "agent_reports": [], "arbiter_report": {}}
             score = consensus.get("final_score", 0.0)
 
-            # Cache the result for future cycles
-            council_cache.store(
-                market_id=market_id,
-                market_question=question,
-                final_score=score,
-                consensus_data=consensus,
-                end_date=cluster_alert.get("end_date"),
-                whale_count=whale_count,
-            )
+            # Only cache if the score is NOT the useless default 0.5 with no real analysis
+            # (i.e. all agents returned 0.5 due to an error we didn't catch as RuntimeError)
+            all_reports = consensus.get("agent_reports", [])
+            all_errored = all(
+                "error" in str(r.get("reasoning", "")).lower() or
+                "consensus error" in str(r.get("reasoning", "")).lower()
+                for r in all_reports
+            ) if all_reports else False
+
+            if all_errored:
+                logger.warning(
+                    f"Director: All Council agents errored for '{question[:40]}' — "
+                    f"NOT caching score={score:.3f} (would poison future hits). "
+                    f"Check OPENAI_API_KEY in .env!"
+                )
+            else:
+                # Cache the result for future cycles
+                council_cache.store(
+                    market_id=market_id,
+                    market_question=question,
+                    final_score=score,
+                    consensus_data=consensus,
+                    end_date=cluster_alert.get("end_date"),
+                    whale_count=whale_count,
+                )
         
         # 3.5 Prioritize Imminent Events (< 48h)
         end_date_str = cluster_alert.get("end_date")

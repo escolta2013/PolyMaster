@@ -424,6 +424,19 @@ async def autonomous_loop():
     logger.info("Dynamic Scheduler: ENABLED")
     logger.info("  <6h  → every 5min | <24h → every 15min | <7d → every 1h | >7d → every 4h")
 
+    # ── STARTUP: Validate Council API Key ────────────────────────────────────
+    # If the key is invalid, ALL council scores will be 0.5 and NOTHING will ever
+    # execute (threshold=0.68 is never reachable). Detect this early and loudly.
+    logger.info("Validating Council API key...")
+    key_valid = await director.council.validate_api_key()
+    if not key_valid:
+        logger.critical(
+            "🔑 COUNCIL API KEY INVALID OR MISSING — The autonomous loop will run BUT "
+            "no trades will execute because all Council scores will be stuck at 0.5. "
+            "Update OPENAI_API_KEY or OPENROUTER_API_KEY in backend/.env and restart."
+        )
+    # ─────────────────────────────────────────────────────────────────────────
+
     # Notify Telegram that the bot is online
     await telegram.bot_started(mode=mode_str)
 
