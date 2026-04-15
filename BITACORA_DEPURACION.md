@@ -91,3 +91,24 @@ Este documento registra los cambios realizados al bot durante su ejecución loca
   - Configuración de la nueva OpenRouter API Key y verificación del modelo `google/gemma-4-31b-it:free`.
 - **Razón:** Completar la migración obligatoria de Polymarket y asegurar que todos los componentes del sistema utilicen los estándares de la nueva API.
 - **Efecto esperado:** Estabilidad total ante el cambio del 1 de mayo y capacidad de análisis de IA restaurada en EC2.
+
+---
+
+### Fecha: 15 de Abril de 2026 (Estabilización del Motor Autónomo)
+
+**10. Resolución de Fallas Críticas en el Concilio de IA (Error 401/429)**
+- **Archivos modificados:**
+  - `backend/app/engines/council/orchestrator.py`
+  - `backend/app/engines/autonomous/director.py`
+  - `backend/run_autonomous_loop.py`
+  - `backend/.env` (Configuración de Keys)
+- **Cambios realizados:**
+  - **Detección de 401:** Se modificó el `Orchestrator` para que ya no oculte errores de autenticación. Ahora lanza un `RuntimeError` inmediato si la API Key falla (401), evitando el fallback silencioso a `0.5`.
+  - **Protección de Caché:** El `Director` ahora captura fallos del Council y **no cachea** scores de `0.5` producidos por errores de API. Esto evita "envenenar" la memoria del bot con datos basura.
+  - **Validación al Startup:** El loop principal ahora ejecuta una prueba de conexión a la IA al arrancar. Si falla, genera un log `CRITICAL` muy visible.
+  - **Corrección de Variables:** Se renombró el uso de variables en el `.env`. Se movió la key de OpenRouter a `OPENROUTER_API_KEY` para evitar confusión con el backend nativo de OpenAI.
+  - **Cambio de Modelo (SOTA):** Se migró de `google/gemma-4-31b-it:free` (que daba abundantes errores 429 de saturación) a `openai/gpt-4o-mini`.
+- **Nuevo Tool de Diagnóstico:** Se creó `backend/test_council_key.py` para verificar salud de la IA sin correr todo el bot.
+- **Razón:** El bot estaba "ciego" (todos los scores eran 0.5) debido a una configuración de API incorrecta en el servidor EC2 y saturación del modelo gratuito.
+- **Efecto esperado:** Restauración total de la capacidad de análisis. El bot ahora producirá scores reales (0.30 - 0.85) y podrá ejecutar trades de alta confianza.
+
