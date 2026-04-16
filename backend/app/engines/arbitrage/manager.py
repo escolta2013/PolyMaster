@@ -81,7 +81,7 @@ class ArbManager:
         self.min_edge_pct = settings.ARB_MIN_EDGE_PCT
         self.simulation = settings.COPY_SIMULATION
         self._recent_arbs: Dict[str, datetime] = {}   # market_id → last executed
-        self.dedup_window_seconds = 3600  # Don't re-execute same market within 1h
+        self.dedup_window_seconds = settings.ARB_DEDUP_WINDOW  # Don't re-execute same market within X seconds
 
     # ─────────────────────────────────────────────
     # PUBLIC API

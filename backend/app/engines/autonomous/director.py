@@ -240,7 +240,7 @@ class DirectorAgent:
                 .select("id") \
                 .eq("market_id", market_id) \
                 .in_("decision", ["EXECUTED", "WOULD_EXECUTE", "EXECUTED_SIM", "EXECUTED_LIVE"]) \
-                .gte("detected_at", (datetime.now(timezone.utc) - timedelta(hours=12)).isoformat()) \
+                .gte("detected_at", (datetime.now(timezone.utc) - timedelta(hours=settings.DIRECTOR_DEDUP_WINDOW_HOURS)).isoformat()) \
                 .execute()
             
             if recent_trade.data:
@@ -377,8 +377,8 @@ class DirectorAgent:
 
             # 3.1 Basic Filters: Price too extreme or already settled?
             price_check = (best_ask + best_bid) / 2 if (best_ask and best_bid) else current_price
-            price_limit_low = 0.05 if settings.PAPER_TRADING_MODE else 0.10
-            price_limit_high = 0.95 if settings.PAPER_TRADING_MODE else 0.90
+            price_limit_low = settings.DIRECTOR_PRICE_LIMIT_LOW_PAPER if settings.PAPER_TRADING_MODE else settings.DIRECTOR_PRICE_LIMIT_LOW_LIVE
+            price_limit_high = settings.DIRECTOR_PRICE_LIMIT_HIGH_PAPER if settings.PAPER_TRADING_MODE else settings.DIRECTOR_PRICE_LIMIT_HIGH_LIVE
             
             if price_check >= price_limit_high or price_check <= price_limit_low:
                 logger.info(f"Director: Skipping settled or extreme market '{question}' (Price Check: {price_check:.3f}, best_ask: {best_ask})")
@@ -523,8 +523,8 @@ class DirectorAgent:
                 time_diff = end_dt - now_utc
                 time_remaining = time_diff
 
-                # A. IMMINENT EVENT LOGIC (< 48h)
-                if timedelta(hours=0) < time_diff < timedelta(hours=48):
+                # A. IMMINENT EVENT LOGIC
+                if timedelta(hours=0) < time_diff < timedelta(hours=settings.DIRECTOR_IMMINENT_HOURS):
                     # User Manual (Phase 5): Do not lower hurdle below 0.68.
                     # We keep the flag for logging but enforce strict threshold.
                     is_imminent = True
@@ -532,12 +532,12 @@ class DirectorAgent:
 
                 # B. SNIPING STRATEGY (Short-Term Markets < 60m duration or ending very soon)
                 # If market ends in less than 60 mins AND we are not in the last 10 mins -> WAIT
-                if timedelta(seconds=0) < time_diff < timedelta(minutes=60):
-                     if time_diff > timedelta(minutes=10):
-                         logger.info(f"Director: SNIPING MODE. Waiting for last 10m (Current: {time_diff}). Skipping.")
+                if timedelta(seconds=0) < time_diff < timedelta(minutes=settings.DIRECTOR_SNIPING_WAIT_MINS):
+                     if time_diff > timedelta(minutes=settings.DIRECTOR_SNIPING_KILLZONE_MINS):
+                         logger.info(f"Director: SNIPING MODE. Waiting for last killzone (Current: {time_diff}). Skipping.")
                          return {"status": "skipped", "reason": "sniping_wait_period"}
                      else:
-                         logger.info(f"Director: SNIPING MODE ACTIVE. In kill zone (<10m). Execution allowed.")
+                         logger.info(f"Director: SNIPING MODE ACTIVE. In kill zone (<{settings.DIRECTOR_SNIPING_KILLZONE_MINS}m). Execution allowed.")
 
             except Exception as e:
                 logger.warning(f"Director: Could not parse end_date '{end_date_str}': {e}")
@@ -646,7 +646,7 @@ class DirectorAgent:
         # INDEXER_DISCOVERY: strict edge required (settings.PAPER_MIN_EDGE_NET)
         #   because there's no external signal backing the Council's analysis.
         if source == "WHALE_TRACKER":
-            effective_min_edge = 0.05  # Smart money signal reduces bar
+            effective_min_edge = settings.DIRECTOR_MIN_EDGE_WHALE  # Smart money signal reduces bar
             logger.info(f"Director: WHALE_TRACKER signal detected — relaxed edge threshold: {effective_min_edge}")
         else:
             effective_min_edge = settings.PAPER_MIN_EDGE_NET  # Full strictness for pure discovery
@@ -780,12 +780,12 @@ class DirectorAgent:
                     # (c) Decision flipped → log the change
                     should_log = True
                     logger.info(f"[PAPER] Decision FLIPPED for {market_id}: {prev_decision} → {paper_status}. Logging.")
-                elif price_delta > 0.02:
+                elif price_delta > settings.DIRECTOR_PAPER_LOG_PRICE_DELTA:
                     # (b) Material price change → log update
                     should_log = True
                     logger.info(f"[PAPER] Price changed for {market_id}: {prev_ask:.3f} → {best_ask:.3f} (Δ={price_delta:.3f}). Logging.")
                 else:
-                    logger.debug(f"[PAPER] Skipping duplicate log for {market_id} (same decision, price Δ={price_delta:.4f} < 0.02)")
+                    logger.debug(f"[PAPER] Skipping duplicate log for {market_id} (same decision, price Δ={price_delta:.4f} < {settings.DIRECTOR_PAPER_LOG_PRICE_DELTA})")
             
             if should_log:
                 try:

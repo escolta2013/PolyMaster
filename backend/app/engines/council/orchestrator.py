@@ -226,8 +226,8 @@ class AgentOrchestrator:
             
         self._api_key = api_key
         self._model = model
-        self.consensus_threshold = 0.66
-        self.divergence_threshold = 0.25 # StdDev high alert
+        self.consensus_threshold = settings.COUNCIL_CONSENSUS_THRESHOLD
+        self.divergence_threshold = settings.COUNCIL_DIVERG_THRESHOLD # StdDev high alert
         self.supabase: Client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
         
         # Integration from Polymarket/agents (News & Search)
@@ -682,8 +682,8 @@ class AgentOrchestrator:
         raw_diffs = {r['agent']: abs(r['confidence'] - avg_confidence) for r in specialist_results}
         outlier_agent = max(raw_diffs, key=raw_diffs.get)
 
-        # Execution Rule: FinalScore > 0.66 (or < 0.34 for NO) AND CQI > Threshold
-        cqi_threshold = 0.08 # Adjusted from 0.1 for initial sensitivity
+        # Execution Rule: FinalScore > threshold (or < 1-threshold for NO) AND CQI > Threshold
+        cqi_threshold = settings.COUNCIL_CQI_THRESHOLD # Adjusted from 0.1 for initial sensitivity
         
         signal_side = "YES" if final_score >= self.consensus_threshold else ("NO" if final_score <= (1 - self.consensus_threshold) else "NONE")
         is_consensus = signal_side != "NONE" and cqi > cqi_threshold
@@ -702,7 +702,7 @@ class AgentOrchestrator:
             
             # Application of Fractional Kelly and CQI dampening
             # More divergence = smaller size. Better CQI = more confidence.
-            fraction = 0.1 # Base 10% Kelly
+            fraction = settings.COUNCIL_KELLY_FRACTION # Base X% Kelly
             suggested_allocation_pct = kelly_size_raw * fraction * (1 - std_dev)
         else:
             suggested_allocation_pct = 0.0

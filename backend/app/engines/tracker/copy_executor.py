@@ -20,6 +20,7 @@ from typing import Dict, Any, Optional
 from dataclasses import dataclass
 from py_clob_client.clob_types import OrderArgs, OrderType
 from app.core.client import PolyClient
+from app.core.config import settings
 
 logger = logging.getLogger("CopyExecutor")
 
@@ -66,9 +67,9 @@ class CopyExecutor:
 
     def __init__(self):
         self.client = PolyClient.get_instance()
-        self.max_per_trade = float(os.getenv("COPY_MAX_PER_TRADE", "100"))
-        self.max_daily = float(os.getenv("COPY_MAX_DAILY", "500"))
-        self.simulation = os.getenv("COPY_SIMULATION", "true").lower() == "true"
+        self.max_per_trade = settings.COPY_MAX_PER_TRADE
+        self.max_daily = settings.COPY_MAX_DAILY
+        self.simulation = settings.COPY_SIMULATION
 
         # Daily exposure tracker  { "YYYY-MM-DD": total_usdc }
         self._daily_spent: Dict[str, float] = {}
@@ -77,8 +78,8 @@ class CopyExecutor:
         self._supabase = None
         try:
             from supabase import create_client
-            url = os.getenv("SUPABASE_URL")
-            key = os.getenv("SUPABASE_KEY")
+            url = settings.SUPABASE_URL
+            key = settings.SUPABASE_KEY
             if url and key:
                 self._supabase = create_client(url, key)
         except Exception:

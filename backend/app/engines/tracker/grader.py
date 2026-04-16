@@ -1,4 +1,5 @@
 from pydantic import BaseModel
+from app.core.config import settings
 
 class WalletStats(BaseModel):
     address: str
@@ -20,15 +21,15 @@ class WalletGrader:
         Tiers: WHALE, SHARK, ORCA, FISH, PLANKTON
         """
         # 1. WHALE: High volume giants
-        if stats.volume_usdc >= 1000000 and stats.roi >= 0.15:
+        if stats.volume_usdc >= settings.GRADE_WHALE_VOL and stats.roi >= settings.GRADE_WHALE_ROI:
             return "WHALE"
         
         # 2. SHARK: Skilled high-volume players
-        if stats.volume_usdc >= 100000 and stats.roi >= 0.20 and stats.win_rate >= 0.60:
+        if stats.volume_usdc >= settings.GRADE_SHARK_VOL and stats.roi >= settings.GRADE_SHARK_ROI and stats.win_rate >= settings.GRADE_SHARK_WINRATE:
             return "SHARK"
             
         # 3. ORCA: Profitable regulars
-        if stats.roi >= 0.15 and stats.win_rate >= 0.55 and stats.total_trades >= 30:
+        if stats.roi >= settings.GRADE_ORCA_ROI and stats.win_rate >= settings.GRADE_ORCA_WINRATE and stats.total_trades >= settings.GRADE_ORCA_TRADES:
             return "ORCA"
             
         # 4. FISH: Profitable but low volume or few trades

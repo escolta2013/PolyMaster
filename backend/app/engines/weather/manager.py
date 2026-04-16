@@ -69,7 +69,7 @@ class WeatherManager:
             # Polymarket use tags or search
             params = {
                 "active": True,
-                "limit": 50,
+                "limit": settings.WEATHER_SCAN_LIMIT,
                 "order": "volume",
                 "ascending": False,
                 # Hardcoded tags or keyword search in titles
@@ -152,14 +152,14 @@ class WeatherManager:
             # Case: Will it reach 62°F? 
             # If actual is ALREADY 63°F -> YES is 100% physically certain.
             if actual_temp >= (threshold + 0.2): # small buffer
-                if current_price < 0.90: # Market is slow!
+                if current_price < settings.WEATHER_ENTRY_THRESHOLD_HIGH: # Market is slow!
                     edge_found = True
                     reason = f"Actual temp ({actual_temp}) already above threshold ({threshold}). Market price {current_price} is lagging."
         else:
             # Case: Will it stay below 60°F? 
             # If actual is ALREADY 62°F -> NO is 100%. YES is 0%.
             if actual_temp > (threshold + 0.2):
-                if current_price > 0.10: # YES is still priced high
+                if current_price > settings.WEATHER_ENTRY_THRESHOLD_LOW: # YES is still priced high
                     edge_found = True
                     reason = f"Actual temp ({actual_temp}) already EXCEEDED threshold ({threshold}). YES should be 0, but is {current_price}."
 
@@ -178,6 +178,12 @@ class WeatherManager:
                 if existing.data:
                     logger.debug(f"Weather Exploit: Market {market_id} record found in DB. Skipping.")
                     self.executed_markets.add(market_id)
+                    return
+                
+                # Minimum Budget Check
+                min_size = getattr(settings, "MIN_ORDER_SIZE_USD", 5.0)
+                if settings.WEATHER_MAX_BUDGET < min_size:
+                    logger.warning(f"Weather Exploit: Budget ({settings.WEATHER_MAX_BUDGET}) is below minimum required ({min_size}). Skipping.")
                     return
                 
                 # Add to local memory immediately to prevent race conditions within the same cycle

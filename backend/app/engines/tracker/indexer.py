@@ -29,11 +29,11 @@ class PolymarketIndexer:
                 cursor = None
                 url = f"{self.base_url}/markets/keyset"
                 
-                # keyset pagination loop to fetch up to 500 markets safely
-                target_total = 500
+                # keyset pagination loop to fetch up to configured total markets safely
+                target_total = settings.INDEXER_TARGET_TOTAL_MARKETS
                 while len(all_markets) < target_total:
                     params = {
-                        "limit": 100,
+                        "limit": settings.INDEXER_BATCH_LIMIT,
                         "ascending": False,
                         "active": True
                     }
@@ -64,7 +64,7 @@ class PolymarketIndexer:
                 
                 # Coarse filter thresholds — Relaxed for Production debugging
                 age_limit = None
-                min_volume = 100
+                min_volume = settings.INDEXER_MIN_VOLUME
 
                 
                 for m in data:
@@ -96,12 +96,12 @@ class PolymarketIndexer:
                 
                 # PHASE 2: CLOB Spot-Check (Fine Filter)
                 # We check the top performers from our filtered list
-                check_count = 300 if is_paper else 150
+                check_count = settings.INDEXER_CHECK_COUNT_PAPER if is_paper else settings.INDEXER_CHECK_COUNT_LIVE
                 candidates_to_check = valid[:check_count]
                 import asyncio
                 
                 # Use Semaphore to avoid overwhelming the API and getting 502s
-                sem = asyncio.Semaphore(30)
+                sem = asyncio.Semaphore(settings.INDEXER_SEMAPHORE)
                 
                 async def verify_market_quality(market):
                     async with sem:
@@ -170,8 +170,8 @@ class PolymarketIndexer:
                 stats = {"price_fail": 0, "spread_fail": 0, "depth_fail": 0}
                 
                 # Paper Mode: Relax filters to get more calibration data
-                min_p = 0.15 
-                max_p = 0.85
+                min_p = settings.INDEXER_MIN_PRICE 
+                max_p = settings.INDEXER_MAX_PRICE
                 max_spread = settings.PAPER_TRADING_MAX_SPREAD if settings.PAPER_TRADING_MODE else 0.15
 
                 
@@ -198,7 +198,7 @@ class PolymarketIndexer:
                         continue
                         
                     # Layer 3: Depth (Skip/Relax for Paper)
-                    min_depth = 0.0 if is_paper else 10.0
+                    min_depth = 0.0 if is_paper else settings.INDEXER_MIN_DEPTH_LIVE
                     if d < min_depth:
                         stats["depth_fail"] += 1
                         logger.info(f"Indexer Reject [D]: '{q[:30]}' (Depth {d:.1f} < {min_depth})")

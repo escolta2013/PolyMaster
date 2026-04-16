@@ -4,6 +4,7 @@ import asyncio
 from datetime import datetime, timezone
 from app.core.client import PolyClient
 from app.engines.ghost.order_manager import OrderManager
+from app.core.config import settings
 
 class RewardsManager:
     """
@@ -18,13 +19,15 @@ class RewardsManager:
         self.client = PolyClient.get_instance()
         self.order_manager = OrderManager()
         self.active_farms = {} # market_id: { "buy_id": str, "sell_id": str, "token_id": str }
-        self.target_offset = 0.03 # 3 cents from mid for better scoring safety
-        self.max_offset = 0.045 # Threshold to move (4.5 cents)
+        self.target_offset = settings.GRINDER_TARGET_OFFSET
+        self.max_offset = settings.GRINDER_MAX_OFFSET
 
-    async def scan_and_farm(self, limit: int = 3):
+    async def scan_and_farm(self, limit: Optional[int] = None):
         """
         Finds markets with rewards and initiates farming.
         """
+        if limit is None:
+            limit = settings.REWARDS_MAX_MARKETS
         from app.engines.tracker.indexer import PolymarketIndexer
         indexer = PolymarketIndexer()
         
@@ -42,10 +45,12 @@ class RewardsManager:
             logger.success(f"Farming: Initiating farm for '{m.get('question')[:30]}...' ({m_id})")
             await self.place_scoring_orders(m_id, token_id)
 
-    async def place_scoring_orders(self, market_id: str, token_id: str, size: float = 100.0):
+    async def place_scoring_orders(self, market_id: str, token_id: str, size: Optional[float] = None):
         """
         Places a BUY and SELL order within the scoring range.
         """
+        if size is None:
+            size = settings.REWARDS_ORDER_SIZE
         try:
             intel = await self.client.get_orderbook(token_id)
             mid = intel.get("midpoint", 0.5)
@@ -113,7 +118,7 @@ class RewardsManager:
                 # 3. Decision logic: If EITHER is not scoring, or mid drifted too far
                 drift = abs(current_mid - farm["midpoint_at_entry"])
                 
-                if not is_buy_scoring or not is_sell_scoring or drift > 0.04:
+                if not is_buy_scoring or not is_sell_scoring or drift > settings.GRINDER_DRIFT_THRESHOLD:
                     logger.warning(f"Farming: Midpoint drift ({drift:.3f}) or scoring loss for {m_id}. Rebalancing...")
                     
                     # Cancel existing
