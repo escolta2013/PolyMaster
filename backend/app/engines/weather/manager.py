@@ -361,7 +361,7 @@ class WeatherManager:
         
         if settings.COPY_SIMULATION:
             logger.success(f"Weather Exploit [SIM]: Would buy SHARES for {size_usdc} USDC on token {target_token}")
-            await self._log_to_supabase(market, actual_temp, threshold, reason, decision="EXECUTED_SIM", token_id=target_token, size_usdc=size_usdc)
+            await self._log_to_supabase(market, actual, threshold, reason, decision="EXECUTED_SIM", token_id=target_token, size_usdc=size_usdc)
         else:
             # Execution logic
             try:
@@ -387,14 +387,14 @@ class WeatherManager:
                         )
                     except Exception as te:
                         logger.error(f"Weather Telegram notification failed: {te}")
-                    await self._log_to_supabase(market, actual_temp, threshold, reason, decision="EXECUTED_LIVE", token_id=target_token, size_usdc=size_usdc, order_id=order_id)
+                    await self._log_to_supabase(market, actual, threshold, reason, decision="EXECUTED_LIVE", token_id=target_token, size_usdc=size_usdc, order_id=order_id)
                 else:
                     error_msg = res.get("message", "Unknown error")
                     logger.error(f"Weather Exploit [LIVE]: Execution failed: {error_msg}")
-                    await self._log_to_supabase(market, actual_temp, threshold, reason, decision="FAILED", token_id=target_token, size_usdc=size_usdc)
+                    await self._log_to_supabase(market, actual, threshold, reason, decision="FAILED", token_id=target_token, size_usdc=size_usdc)
             except Exception as e:
                 logger.error(f"Weather Exploit [LIVE]: Execution exception: {e}")
-                await self._log_to_supabase(market, actual_temp, threshold, reason, decision="ERROR", token_id=target_token, size_usdc=size_usdc)
+                await self._log_to_supabase(market, actual, threshold, reason, decision="ERROR", token_id=target_token, size_usdc=size_usdc)
 
     async def _log_to_supabase(self, market: Dict, actual: float, threshold: float, reason: str, decision: str, token_id: str, size_usdc: float, order_id: str = None):
         try:
