@@ -270,8 +270,12 @@ class WeatherManager:
                 if unit == "celsius":
                     return round((temp_f - 32) * 5.0 / 9.0, 1)
                 return temp_f
+        except httpx.HTTPStatusError as e:
+            logger.error(f"NOAA API Status Error ({e.response.status_code}) for {e.request.url}")
+        except httpx.TimeoutException:
+            logger.error("NOAA API Timeout: El servidor de NOAA no respondió a tiempo.")
         except Exception as e:
-            logger.error(f"NOAA API Error: {e}")
+            logger.error(f"NOAA API Unexpected Error: {type(e).__name__} - {e}")
         return None
 
     async def _fetch_weatherapi(self, lat: float, lon: float, unit: str, http: httpx.AsyncClient) -> Optional[float]:
