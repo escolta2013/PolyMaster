@@ -154,6 +154,7 @@ class Settings(BaseSettings):
     WEATHER_SCAN_LIMIT: int = 50
     WEATHER_ENTRY_THRESHOLD_HIGH: float = 0.90
     WEATHER_ENTRY_THRESHOLD_LOW: float = 0.10
+    WEATHER_API_KEY: str | None = None
     ARB_DEDUP_WINDOW: int = 3600 # Unified name
 
     # Portfolio Protection

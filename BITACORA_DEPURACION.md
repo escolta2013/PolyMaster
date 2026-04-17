@@ -112,3 +112,17 @@ Este documento registra los cambios realizados al bot durante su ejecución loca
 - **Razón:** El bot estaba "ciego" (todos los scores eran 0.5) debido a una configuración de API incorrecta en el servidor EC2 y saturación del modelo gratuito.
 - **Efecto esperado:** Restauración total de la capacidad de análisis. El bot ahora producirá scores reales (0.30 - 0.85) y podrá ejecutar trades de alta confianza.
 
+
+---
+
+### Fecha: 16 de Abril de 2026 (Centralización de Configuración y Upgrade de Clima)
+
+**11. Centralización de Límites y Presupuestos**
+- **Archivos modificados:** pp/core/config.py, .env.example, y motores (director.py, cache.py, orchestrator.py, 	racker.py).
+- **Cambios realizados:** Se migró TODA la lógica hardcodeada de presupuestos y topes de confianza al .env (Pydantic Settings).
+- **Razón:** Permitir ajustes en caliente ( límite) y corregir el error crítico de Polymarket Size lower than the minimum: 5.
+
+**12. Consenso Robusto Multi-API (Weather Engine)**
+- **Archivos modificados:** pp/engines/weather/manager.py
+- **Cambios realizados:** El motor de Clima pasó de consultar 1 sola API (Open-Meteo) a un consenso unánime de 3 APIs (Open-Meteo, WeatherAPI, NOAA). Se introdujo geolocalización ligera (is_us: True) al diccionario para evitar colapsos al consultar la NOAA en mercados de París o Londres.
+- **Razón:** Blindar la lógica contra fallos de red en sensores climatológicos y replicar la asimetría ganadora del Smart Money en mercados sub-eficientes.
