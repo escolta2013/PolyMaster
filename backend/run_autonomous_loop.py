@@ -25,6 +25,7 @@ from app.engines.weather import weather_manager
 from app.engines.rewards.grinder import rewards_manager
 from app.engines.council.cache import council_cache
 from app.services.telegram_bot import telegram
+from app.engines.wallet.redeemer import redeemer
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -358,8 +359,18 @@ class OutcomeResolver:
                         if api_end_date and row.get("end_date_iso") is None:
                             payload["end_date_iso"] = api_end_date
                         updates.append(payload)
-                        if new_status == "WIN": wins += 1
-                        elif new_status == "LOSS": losses += 1
+                        if new_status == "WIN": 
+                            wins += 1
+                            # TRIGGER AUTO-REDEEM
+                            condition_id = data.get("conditionId")
+                            if condition_id:
+                                try:
+                                    # Non-blocking, start the redemption task
+                                    asyncio.create_task(redeemer.redeem_market(condition_id, trade_outcome))
+                                except Exception as red_e:
+                                    logger.error(f"[RESOLVER] Handover to AutoRedeem failed: {red_e}")
+                        elif new_status == "LOSS": 
+                            losses += 1
                     else:
                         if api_end_date and row.get("end_date_iso") is None:
                             updates.append({"id": row_id, "correct": "PENDING", "end_date_iso": api_end_date})
