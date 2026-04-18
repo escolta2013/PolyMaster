@@ -22,7 +22,9 @@ class Settings(BaseSettings):
     CLOB_SECRET: Optional[str] = None
     CLOB_PASSPHRASE: Optional[str] = None
     POLY_PROXY_ADDRESS: Optional[str] = None  # Set if using a Polymarket proxy wallet
-    
+    POLYMARKET_BUILDER_API_KEY: Optional[str] = None
+    POLYMARKET_BUILDER_SECRET: Optional[str] = None
+    POLYMARKET_BUILDER_PASSPHRASE: Optional[str] = None
     # AI / LLM Settings
     OPENAI_API_KEY: Optional[str] = None
     OPENROUTER_API_KEY: Optional[str] = None

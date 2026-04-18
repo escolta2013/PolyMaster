@@ -126,3 +126,40 @@ Este documento registra los cambios realizados al bot durante su ejecución loca
 - **Archivos modificados:** pp/engines/weather/manager.py
 - **Cambios realizados:** El motor de Clima pasó de consultar 1 sola API (Open-Meteo) a un consenso unánime de 3 APIs (Open-Meteo, WeatherAPI, NOAA). Se introdujo geolocalización ligera (is_us: True) al diccionario para evitar colapsos al consultar la NOAA en mercados de París o Londres.
 - **Razón:** Blindar la lógica contra fallos de red en sensores climatológicos y replicar la asimetría ganadora del Smart Money en mercados sub-eficientes.
+
+---
+
+### Fecha: 17 de Abril de 2026 (Estabilización y Automatización de Cobros)
+
+**13. Implementación del Motor de Auto-Redeem (Cobro Automático de Ganancias)**
+- **Archivos modificados:**
+  - `backend/app/engines/wallet/redeemer.py` (Nuevo motor)
+  - `backend/run_autonomous_loop.py` (Integración en el Loop)
+- **Cambios realizados:** 
+  - Se creó una clase `AutoRedeemer` que interactúa directamente con el contrato de Polymarket (Conditional Tokens) en Polygon.
+  - Se integró en el `OutcomeResolver` del bot para que, al detectar un trade con estado `WIN`, se dispare automáticamente la transacción de reclamo de USDC on-chain.
+- **Razón:** El usuario tenía que entrar manualmente a Polymarket para "aceptar" las ganancias. Ahora el dinero vuelve a la billetera de trading de forma autónoma, cerrando el ciclo de capital.
+- **Efecto esperado:** Flujo de caja 100% autónomo. El balance disponible aumentará solo tras cada acierto.
+
+**14. Sizing Dinámico y "Test Mode" de Bajo Presupuesto ($5.50)**
+- **Archivo modificado:** `backend/app/engines/weather/manager.py`
+- **Cambios realizados:** 
+  - Se implementó una comprobación de balance en tiempo real antes de cada apuesta.
+  - Se estableció un tamaño de trade fijo de **$5.50** (ligeramente superior al mínimo de ~$5.00 de Polymarket) mientras se valida la estrategia.
+- **Razón:** El bot intentaba apostar $25.00 con un balance de solo $17.00, lo que causaba fallos de ejecución. Con $5.50, el bot puede hacer múltiples trades de prueba con poco capital.
+- **Efecto esperado:** Ejecución exitosa de trades incluso con balances bajos. Ya se confirmó el primer trade de prueba exitoso (`0x15df...`).
+
+**15. Vinculación Persistente de Wallet Proxy en Supabase**
+- **Archivo modificado:** `backend/app/engines/wallet/manager.py`
+- **Cambios realizados:** 
+  - Se añadió el método `link_proxy_wallet` para permitir el registro seguro de la dirección proxy y la llave privada en la base de datos vinculada al usuario.
+- **Razón:** Asegurar que el bot siempre tenga acceso a las credenciales correctas para firmar transacciones en la red Polygon sin depender de archivos locales volátiles.
+- **Efecto esperado:** Persistencia de credenciales y mayor seguridad operativa.
+
+**16. Corrección de Error en Logs de Clima (`NameError: actual_temp`)**
+- **Archivo modificado:** `backend/app/engines/weather/manager.py`
+- **Cambios realizados:** 
+  - Se corrigió la referencia a la variable `actual` que se estaba intentando loguear como `actual_temp`.
+- **Razón:** Un error tipográfico causaba que el bot se detuviera justo después de ejecutar un trade exitoso, impidiendo los logs y notificaciones de Telegram.
+- **Efecto esperado:** Ciclos de trading limpios y notificaciones de éxito completas.
+

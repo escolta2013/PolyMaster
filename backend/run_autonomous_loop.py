@@ -366,7 +366,8 @@ class OutcomeResolver:
                             if condition_id:
                                 try:
                                     # Non-blocking, start the redemption task
-                                    asyncio.create_task(redeemer.redeem_market(condition_id, trade_outcome))
+                                    logger.info("[RESOLVER] WIN detected. Initiating Relayer batch redemption sweep.")
+                                    asyncio.create_task(redeemer.redeem_all_resolved())
                                 except Exception as red_e:
                                     logger.error(f"[RESOLVER] Handover to AutoRedeem failed: {red_e}")
                         elif new_status == "LOSS": 
