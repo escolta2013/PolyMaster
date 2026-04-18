@@ -415,7 +415,8 @@ class WeatherManager:
                     "logic": reason
                 },
                 "size_usdc": size_usdc,
-                "detected_at": datetime.now(timezone.utc).isoformat()
+                "detected_at": datetime.now(timezone.utc).isoformat(),
+                "end_date_iso": market.get("end_date_iso")
             }).execute()
         except Exception as e:
             logger.error(f"Weather Exploit: Failed to update Supabase log: {e}")

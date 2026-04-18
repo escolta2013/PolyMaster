@@ -397,6 +397,27 @@ class OutcomeResolver:
                             payload["end_date_iso"] = upd["end_date_iso"]
                         sb.table("autonomous_logs").update(payload).eq("id", upd["id"]).execute()
                         processed_ok += 1
+                        
+                        # -- PATCH: Synchronize P&L to copy_trades --
+                        try:
+                            # We fetch the row again or use the cached 'row' from the loop if we were still in it.
+                            # But since we are outside the loop in a batch update, we need a different approach.
+                            # Re-fetching the log entry to get market_id and outcome.
+                            log_entry = sb.table("autonomous_logs").select("market_id, outcome").eq("id", upd["id"]).single().execute()
+                            if log_entry.data:
+                                m_id = log_entry.data["market_id"]
+                                trade_side = log_entry.data["outcome"]
+                                status = upd["correct"]
+                                
+                                # Find matching trades in copy_trades
+                                trades_to_update = sb.table("copy_trades").select("id, shares").eq("market_id", m_id).eq("outcome", trade_side).execute()
+                                
+                                for t in (trades_to_update.data or []):
+                                    ov = float(t["shares"]) if status == "WIN" else 0.0
+                                    sb.table("copy_trades").update({"outcome_value": ov}).eq("id", t["id"]).execute()
+                                    logger.debug(f"[RESOLVER] Updated copy_trade {t['id']} with P&L outcome: ${ov}")
+                        except Exception as pnl_sync_e:
+                            logger.error(f"[RESOLVER] P&L Sync to copy_trades failed for log {upd['id']}: {pnl_sync_e}")
                     except Exception as upd_e:
                         logger.error(f"[RESOLVER] Failed to update row {upd['id']}: {upd_e}")
                         errors += 1

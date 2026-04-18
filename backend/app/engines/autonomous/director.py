@@ -807,7 +807,8 @@ class DirectorAgent:
                         "best_bid": best_bid,
                         "spread": round(spread, 4),
                         "detected_at": datetime.now(timezone.utc).isoformat(),
-                        "source": source
+                        "source": source,
+                        "end_date_iso": m_data.get("end_date_iso") if 'm_data' in locals() else None
                     }
                     supabase.table("autonomous_logs").insert(paper_entry).execute()
                     logger.info(f"[PAPER] Logged {paper_status} for {market_id}")
@@ -917,7 +918,8 @@ class DirectorAgent:
                 "best_bid": best_bid,
                 "spread": spread,
                 "detected_at": datetime.now(timezone.utc).isoformat(),
-                "source": source
+                "source": source,
+                "end_date_iso": m_data.get("end_date_iso") if 'm_data' in locals() else None
             }
             supabase.table("autonomous_logs").insert(log_entry).execute()
             logger.info(f"Director: Logged decision {decision_status} for {market_id}")
