@@ -329,9 +329,9 @@ class WeatherManager:
             logger.error(f"Weather Exploit: Cannot execute trade, no valid token IDs for {market.get('id')}")
             return
             
-        target_token = token_ids[0] # Default YES
-        
+        exec_outcome = "YES" # Default
         if "YES should be 0" in reason:
+            exec_outcome = "NO"
             # We want to buy NO. In Polymarket binary, it's usually the second token.
             if len(token_ids) > 1:
                 target_token = token_ids[1] # NO token
@@ -361,7 +361,9 @@ class WeatherManager:
         
         if settings.COPY_SIMULATION:
             logger.success(f"Weather Exploit [SIM]: Would buy SHARES for {size_usdc} USDC on token {target_token}")
-            await self._log_to_supabase(market, actual, threshold, reason, decision="EXECUTED_SIM", token_id=target_token, size_usdc=size_usdc)
+            await self._log_to_supabase(market, actual, threshold, reason, decision="EXECUTED_SIM", token_id=target_token, size_usdc=size_usdc, outcome=exec_outcome)
+            # Log to copy_trades for dashboard stats
+            await self._log_copy_trade_record(market, target_token, exec_outcome, size_usdc, "SIM_EXEC")
         else:
             # Execution logic
             try:
@@ -387,23 +389,24 @@ class WeatherManager:
                         )
                     except Exception as te:
                         logger.error(f"Weather Telegram notification failed: {te}")
-                    await self._log_to_supabase(market, actual, threshold, reason, decision="EXECUTED_LIVE", token_id=target_token, size_usdc=size_usdc, order_id=order_id)
+                    await self._log_to_supabase(market, actual, threshold, reason, decision="EXECUTED_LIVE", token_id=target_token, size_usdc=size_usdc, order_id=order_id, outcome=exec_outcome)
+                    await self._log_copy_trade_record(market, target_token, exec_outcome, size_usdc, order_id)
                 else:
                     error_msg = res.get("message", "Unknown error")
                     logger.error(f"Weather Exploit [LIVE]: Execution failed: {error_msg}")
                     await self._log_to_supabase(market, actual, threshold, reason, decision="FAILED", token_id=target_token, size_usdc=size_usdc)
             except Exception as e:
                 logger.error(f"Weather Exploit [LIVE]: Execution exception: {e}")
-                await self._log_to_supabase(market, actual, threshold, reason, decision="ERROR", token_id=target_token, size_usdc=size_usdc)
+                await self._log_to_supabase(market, actual, threshold, reason, decision="ERROR", token_id=target_token, size_usdc=size_usdc, outcome=exec_outcome)
 
-    async def _log_to_supabase(self, market: Dict, actual: float, threshold: float, reason: str, decision: str, token_id: str, size_usdc: float, order_id: str = None):
+    async def _log_to_supabase(self, market: Dict, actual: float, threshold: float, reason: str, decision: str, token_id: str, size_usdc: float, outcome: str, order_id: str = None):
         try:
             from supabase import create_client
             supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
             supabase.table("autonomous_logs").insert({
                 "market_id": market.get("id"),
                 "market_question": f"[WEATHER] {market.get('question', '')[:200]}",
-                "outcome": "YES/NO (Weather)",
+                "outcome": outcome,
                 "council_score": 1.0, # Physical certainty
                 "decision": decision,
                 "token_id": token_id,
@@ -420,5 +423,35 @@ class WeatherManager:
             }).execute()
         except Exception as e:
             logger.error(f"Weather Exploit: Failed to update Supabase log: {e}")
+
+    async def _log_copy_trade_record(self, market: Dict, token_id: str, outcome: str, size_usdc: float, order_id: str):
+        """Helper to log weather trades to copy_trades table for dashboard syncing."""
+        try:
+            from supabase import create_client
+            supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
+            
+            # Polymarket price at entry for weather engine is usually high (lagging)
+            # or low if we buy early. We don't have perfect price history here, 
+            # so we estimate it but the dashboard uses it for ROI.
+            # Best is to use a nominal price like 0.90 for successes.
+            estimated_price = 0.90
+            shares = size_usdc / estimated_price
+            
+            trade_record = {
+                "user_id": "WEATHER_ENGINE",
+                "source_wallet": "Consensus",
+                "token_id": token_id,
+                "market_id": market.get("id"),
+                "outcome": outcome,
+                "price": estimated_price,
+                "shares": round(shares, 2),
+                "usdc": size_usdc,
+                "order_id": order_id,
+                "simulation": settings.COPY_SIMULATION,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+            supabase.table("copy_trades").insert(trade_record).execute()
+        except Exception as e:
+            logger.error(f"Weather Exploit: Failed to log to copy_trades: {e}")
 
 weather_manager = WeatherManager()
