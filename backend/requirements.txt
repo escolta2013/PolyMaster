@@ -3,7 +3,7 @@ requests==2.31.0
 python-dotenv==1.0.1
 websocket-client==1.7.0
 git+https://github.com/Polymarket/py-builder-relayer-client.git
-git+https://github.com/Polymarket/py-builder-signing-sdk.git
+
 eth-abi
 eth-utils
 eth-account
