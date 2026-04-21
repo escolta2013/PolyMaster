@@ -121,31 +121,44 @@ def get_status():
                     ct_resp = sb.table("copy_trades").select("usdc, shares, price").eq("market_id", t["market_id"]).eq("outcome", t.get("outcome", "YES")).execute()
                     if ct_resp.data:
                         # Sum up all buys for this market/outcome combination
-                        t["invested_usdc"] = round(sum(float(r["usdc"]) for r in ct_resp.data), 4)
-                        t["shares_owned"] = round(sum(float(r["shares"]) for r in ct_resp.data), 4)
+                        t["invested_usdc"]  = round(sum(float(r["usdc"])   for r in ct_resp.data), 4)
+                        t["shares_owned"]   = round(sum(float(r["shares"]) for r in ct_resp.data), 4)
                         t["avg_entry_price"] = round(t["invested_usdc"] / t["shares_owned"], 4) if t["shares_owned"] > 0 else 0
+                        t["shares_source"]  = "actual"
                     else:
-                        # Fall back to size_usdc from autonomous_logs if available
-                        fallback = t.get("size_usdc") or 0
-                        t["invested_usdc"] = round(float(fallback), 4)
-                        t["shares_owned"] = 0
-                        t["avg_entry_price"] = round(float(t.get("best_ask") or 0), 4)
-                    
-                    # Potential payout: shares owned pay $1 each if correct
-                    shares = t.get("shares_owned", 0)
-                    invested = t.get("invested_usdc", 0)
-                    t["potential_payout"] = round(float(shares), 4) if shares else 0
-                    t["potential_profit"] = round(float(shares) - float(invested), 4) if shares and invested else 0
-                    t["potential_roi_pct"] = round((t["potential_profit"] / float(invested)) * 100, 1) if invested and invested > 0 else 0
+                        # No copy_trades record → estimate from autonomous_logs fields
+                        fallback_invested = float(t.get("size_usdc") or 0)
+                        entry_price       = float(t.get("best_ask") or 0)
+
+                        t["invested_usdc"]  = round(fallback_invested, 4)
+                        t["avg_entry_price"] = round(entry_price, 4)
+
+                        # KEY FIX: estimate shares = invested / price (Polymarket shares pay $1 at resolution)
+                        if fallback_invested > 0 and entry_price > 0:
+                            t["shares_owned"] = round(fallback_invested / entry_price, 4)
+                            t["shares_source"] = "estimated"
+                        else:
+                            t["shares_owned"] = 0
+                            t["shares_source"] = "unknown"
+
+                    # ── Potential payout (each share pays $1.00 if the market resolves YES) ──
+                    shares   = float(t.get("shares_owned", 0))
+                    invested = float(t.get("invested_usdc", 0))
+                    t["potential_payout"] = round(shares, 4)                                   # $1 per share
+                    t["potential_profit"] = round(shares - invested, 4) if invested > 0 else 0
+                    t["potential_roi_pct"] = round((t["potential_profit"] / invested) * 100, 1) if invested > 0 else 0
+
                 except Exception as enrich_err:
                     logger.warning(f"[StatusRouter] Enrich error for {t.get('market_id')}: {enrich_err}")
-                    t["invested_usdc"] = 0
-                    t["shares_owned"] = 0
+                    t["invested_usdc"]   = 0
+                    t["shares_owned"]    = 0
                     t["avg_entry_price"] = 0
                     t["potential_payout"] = 0
                     t["potential_profit"] = 0
                     t["potential_roi_pct"] = 0
-            
+                    t["shares_source"]   = "error"
+
+
             trades_today = len(raw_trades)
             recent_trades = raw_trades
 

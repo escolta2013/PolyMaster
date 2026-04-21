@@ -541,7 +541,10 @@ function showTradeDetails(idx) {
 
     <div class="detail-row">
       <span class="detail-label">📈 Shares Owned</span>
-      <span class="detail-value">${shares > 0 ? shares.toFixed(2) + ' shares' : '<span style="color:var(--text-secondary)">—</span>'}</span>
+      <span class="detail-value">
+        ${shares > 0 ? shares.toFixed(2) + ' shares' : '<span style="color:var(--text-secondary)">—</span>'}
+        ${(shares > 0 && t.shares_source === 'estimated') ? '<span style="font-size:9px;color:var(--accent-amber);margin-left:6px;opacity:0.8">~est.</span>' : ''}
+      </span>
     </div>
 
     <div class="detail-row">
@@ -551,17 +554,18 @@ function showTradeDetails(idx) {
 
     ${payout > 0 ? `
     <div class="detail-row" style="border-color:rgba(0,255,157,0.15)">
-      <span class="detail-label">🎯 Potential Payout</span>
-      <span class="detail-value" style="color:var(--accent-green)">$${payout.toFixed(2)} <span style="font-size:10px;opacity:0.6">(if YES resolves)</span></span>
+      <span class="detail-label">🎯 Payout si ${t.outcome || 'YES'} resuelve</span>
+      <span class="detail-value" style="color:var(--accent-green)">$${payout.toFixed(2)}</span>
     </div>
     <div class="detail-row" style="border-color:rgba(0,255,157,0.15)">
-      <span class="detail-label">💰 Potential Profit</span>
+      <span class="detail-label">💰 Ganancia neta</span>
       <span class="detail-value" style="color:${profit >= 0 ? 'var(--accent-green)' : 'var(--accent-red)'}">
         ${profit >= 0 ? '+' : ''}$${profit.toFixed(2)}
         <span style="font-size:11px;margin-left:6px;opacity:0.7">(${roi >= 0 ? '+' : ''}${roi.toFixed(1)}% ROI)</span>
       </span>
     </div>
     ` : ''}
+
 
     <div style="border-top:1px solid rgba(255,255,255,0.07);margin:10px 0 14px;"></div>
 
