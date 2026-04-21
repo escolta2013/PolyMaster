@@ -102,16 +102,32 @@ def get_status():
             # Trades executed today
             exec_resp = (
                 sb.table("autonomous_logs")
-                .select("id, council_score, market_question, decision, correct, detected_at, outcome")
+                .select("id, market_id, token_id, council_score, market_question, decision, correct, detected_at, outcome, end_date_iso")
                 .in_("decision", ["EXECUTED", "WOULD_EXECUTE", "EXECUTED_LIVE", "REJECTED", "FAILED", "ERROR"])
                 .gte("detected_at", today)
                 .order("detected_at", desc=True)
-                .limit(8)
+                .limit(10)
                 .execute()
             )
-            today_trades = exec_resp.data or []
-            trades_today = len(today_trades)
-            recent_trades = today_trades
+            raw_trades = exec_resp.data or []
+            
+            # Enrich with copy_trades data
+            for t in raw_trades:
+                try:
+                    ct_resp = sb.table("copy_trades").select("usdc, shares, price").eq("market_id", t["market_id"]).eq("outcome", t["outcome"]).execute()
+                    if ct_resp.data:
+                        # Sum up all buys for this market/outcome combination
+                        t["invested_usdc"] = sum(float(r["usdc"]) for r in ct_resp.data)
+                        t["shares_owned"] = sum(float(r["shares"]) for r in ct_resp.data)
+                        t["avg_entry_price"] = t["invested_usdc"] / t["shares_owned"] if t["shares_owned"] > 0 else 0
+                    else:
+                        t["invested_usdc"] = 0
+                        t["shares_owned"] = 0
+                except Exception:
+                    t["invested_usdc"] = 0
+            
+            trades_today = len(raw_trades)
+            recent_trades = raw_trades
 
             # Spend from copy_trades (real or simulated executions)
             try:

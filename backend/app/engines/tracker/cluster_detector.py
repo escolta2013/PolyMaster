@@ -43,7 +43,7 @@ class ClusterDetector:
         self.supabase: Client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
         self.min_wallets = min_wallets
         self._recent_alerts: Dict[str, datetime] = {}
-        self.dedup_window = timedelta(hours=6) # Dedup per outcome for 6h
+        self.dedup_window = timedelta(hours=settings.CLUSTER_DEDUP_WINDOW_HOURS) # Dedup per outcome
         self.max_concurrent_requests = 10
         self._initialized = False
 
@@ -106,7 +106,7 @@ class ClusterDetector:
                             else:
                                 ts = datetime.fromtimestamp(int(ts_val), tz=timezone.utc)
                                 
-                            if now - ts < timedelta(hours=12):
+                            if now - ts < timedelta(hours=settings.CLUSTER_ACTIVITY_WINDOW_HOURS):
                                 recent.append(act)
                         except: continue
                     return recent
@@ -152,10 +152,10 @@ class ClusterDetector:
                 token_id, outcome = key.split("_")
                 if key in self._recent_alerts: continue
 
-                # Deep CLOB Filtering for Whales (Price 0.25-0.75, Spread dynamic)
+                # Deep CLOB Filtering for Whales (Price X-Y, Spread dynamic)
                 # Whales have a wider price tolerance but strict spread limits
                 # In Paper Trading Mode, spread is relaxed for calibration data
-                whale_max_spread = settings.PAPER_TRADING_MAX_SPREAD if settings.PAPER_TRADING_MODE else 0.15
+                whale_max_spread = settings.PAPER_TRADING_MAX_SPREAD if settings.PAPER_TRADING_MODE else settings.CLUSTER_WHALE_MAX_SPREAD
                 try:
                     resp = await client.get(f"https://clob.polymarket.com/book?token_id={token_id}")
                     if resp.status_code == 200:
@@ -168,9 +168,8 @@ class ClusterDetector:
                         best_bid = float(bids[0].get("price", 0))
                         best_ask = float(asks[0].get("price", 1))
                         midpoint = (best_bid + best_ask) / 2.0
-                        spread = best_ask - best_bid
                         
-                        if midpoint < 0.25 or midpoint > 0.75:
+                        if midpoint < settings.CLUSTER_PRICE_LOW or midpoint > settings.CLUSTER_PRICE_HIGH:
                             continue
                         if spread > whale_max_spread:
                             continue
@@ -225,7 +224,7 @@ class ClusterDetector:
         return new_alerts
 
     def _calculate_confidence(self, participants: List[Dict]) -> float:
-        base = 0.60 # Start higher for activity
+        base = settings.CLUSTER_BASE_CONFIDENCE # Start higher for activity
         if len(participants) >= 3: base += 0.2
         if any(p['grade'] == "WHALE" for p in participants): base += 0.15
         return min(base, 0.99)

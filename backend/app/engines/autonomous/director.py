@@ -240,7 +240,7 @@ class DirectorAgent:
                 .select("id") \
                 .eq("market_id", market_id) \
                 .in_("decision", ["EXECUTED", "WOULD_EXECUTE", "EXECUTED_SIM", "EXECUTED_LIVE"]) \
-                .gte("detected_at", (datetime.now(timezone.utc) - timedelta(hours=12)).isoformat()) \
+                .gte("detected_at", (datetime.now(timezone.utc) - timedelta(hours=settings.DIRECTOR_DEDUP_WINDOW_HOURS)).isoformat()) \
                 .execute()
             
             if recent_trade.data:
@@ -377,8 +377,8 @@ class DirectorAgent:
 
             # 3.1 Basic Filters: Price too extreme or already settled?
             price_check = (best_ask + best_bid) / 2 if (best_ask and best_bid) else current_price
-            price_limit_low = 0.05 if settings.PAPER_TRADING_MODE else 0.10
-            price_limit_high = 0.95 if settings.PAPER_TRADING_MODE else 0.90
+            price_limit_low = settings.DIRECTOR_PRICE_LIMIT_LOW_PAPER if settings.PAPER_TRADING_MODE else settings.DIRECTOR_PRICE_LIMIT_LOW_LIVE
+            price_limit_high = settings.DIRECTOR_PRICE_LIMIT_HIGH_PAPER if settings.PAPER_TRADING_MODE else settings.DIRECTOR_PRICE_LIMIT_HIGH_LIVE
             
             if price_check >= price_limit_high or price_check <= price_limit_low:
                 logger.info(f"Director: Skipping settled or extreme market '{question}' (Price Check: {price_check:.3f}, best_ask: {best_ask})")
@@ -443,22 +443,67 @@ class DirectorAgent:
                 logger.warning(f"Director: {budget_msg}. Skipping analysis for '{question[:40]}'.")
                 return {"status": "skipped", "reason": "daily_ai_budget_exhausted"}
 
-            consensus = await self.council.get_market_consensus(market_context)
+            try:
+                consensus = await self.council.get_market_consensus(market_context)
+            except RuntimeError as council_fatal_err:
+                # Council raised a fatal error (e.g. HTTP 401 invalid API key).
+                # Do NOT cache this result — it would poison every future cache hit
+                # with a useless 0.5 score that can NEVER trigger execution.
+                logger.critical(
+                    f"🔑 Director: Council FATAL error for '{question[:50]}' — "
+                    f"Skipping execution AND caching. Fix the API key. Error: {council_fatal_err}"
+                )
+                from supabase import create_client as _sb_create
+                try:
+                    _sb = _sb_create(settings.SUPABASE_URL, settings.SUPABASE_KEY)
+                    _sb.table("autonomous_logs").insert({
+                        "market_id": market_id,
+                        "market_question": question,
+                        "outcome": outcome,
+                        "council_score": None,
+                        "decision": "FAILED",
+                        "reasoning": {"error": str(council_fatal_err)[:200], "cause": "council_api_key_invalid"},
+                        "best_ask": best_ask,
+                        "best_bid": best_bid,
+                        "spread": round(spread, 4),
+                        "source": source,
+                        "cache_hit": False,
+                    }).execute()
+                except Exception:
+                    pass
+                return {"status": "failed", "reason": "council_fatal_error", "error": str(council_fatal_err)}
+
             # Defensive normalization: ensure consensus is always a dict
             if not isinstance(consensus, dict):
                 logger.warning(f"Director: Council returned non-dict ({type(consensus).__name__}). Wrapping as empty consensus.")
                 consensus = {"final_score": 0.0, "agent_reports": [], "arbiter_report": {}}
             score = consensus.get("final_score", 0.0)
 
-            # Cache the result for future cycles
-            council_cache.store(
-                market_id=market_id,
-                market_question=question,
-                final_score=score,
-                consensus_data=consensus,
-                end_date=cluster_alert.get("end_date"),
-                whale_count=whale_count,
-            )
+            # Only cache if the score is NOT the useless default 0.5 with no real analysis
+            # (i.e. all agents returned 0.5 due to an error we didn't catch as RuntimeError)
+            all_reports = consensus.get("agent_reports", [])
+            all_errored = all(
+                "error" in str(r.get("reasoning", "")).lower() or
+                "consensus error" in str(r.get("reasoning", "")).lower()
+                for r in all_reports
+            ) if all_reports else False
+
+            if all_errored:
+                logger.warning(
+                    f"Director: All Council agents errored for '{question[:40]}' — "
+                    f"NOT caching score={score:.3f} (would poison future hits). "
+                    f"Check OPENAI_API_KEY in .env!"
+                )
+            else:
+                # Cache the result for future cycles
+                council_cache.store(
+                    market_id=market_id,
+                    market_question=question,
+                    final_score=score,
+                    consensus_data=consensus,
+                    end_date=cluster_alert.get("end_date"),
+                    whale_count=whale_count,
+                )
         
         # 3.5 Prioritize Imminent Events (< 48h)
         end_date_str = cluster_alert.get("end_date")
@@ -478,8 +523,8 @@ class DirectorAgent:
                 time_diff = end_dt - now_utc
                 time_remaining = time_diff
 
-                # A. IMMINENT EVENT LOGIC (< 48h)
-                if timedelta(hours=0) < time_diff < timedelta(hours=48):
+                # A. IMMINENT EVENT LOGIC
+                if timedelta(hours=0) < time_diff < timedelta(hours=settings.DIRECTOR_IMMINENT_HOURS):
                     # User Manual (Phase 5): Do not lower hurdle below 0.68.
                     # We keep the flag for logging but enforce strict threshold.
                     is_imminent = True
@@ -487,12 +532,12 @@ class DirectorAgent:
 
                 # B. SNIPING STRATEGY (Short-Term Markets < 60m duration or ending very soon)
                 # If market ends in less than 60 mins AND we are not in the last 10 mins -> WAIT
-                if timedelta(seconds=0) < time_diff < timedelta(minutes=60):
-                     if time_diff > timedelta(minutes=10):
-                         logger.info(f"Director: SNIPING MODE. Waiting for last 10m (Current: {time_diff}). Skipping.")
+                if timedelta(seconds=0) < time_diff < timedelta(minutes=settings.DIRECTOR_SNIPING_WAIT_MINS):
+                     if time_diff > timedelta(minutes=settings.DIRECTOR_SNIPING_KILLZONE_MINS):
+                         logger.info(f"Director: SNIPING MODE. Waiting for last killzone (Current: {time_diff}). Skipping.")
                          return {"status": "skipped", "reason": "sniping_wait_period"}
                      else:
-                         logger.info(f"Director: SNIPING MODE ACTIVE. In kill zone (<10m). Execution allowed.")
+                         logger.info(f"Director: SNIPING MODE ACTIVE. In kill zone (<{settings.DIRECTOR_SNIPING_KILLZONE_MINS}m). Execution allowed.")
 
             except Exception as e:
                 logger.warning(f"Director: Could not parse end_date '{end_date_str}': {e}")
@@ -601,7 +646,7 @@ class DirectorAgent:
         # INDEXER_DISCOVERY: strict edge required (settings.PAPER_MIN_EDGE_NET)
         #   because there's no external signal backing the Council's analysis.
         if source == "WHALE_TRACKER":
-            effective_min_edge = 0.05  # Smart money signal reduces bar
+            effective_min_edge = settings.DIRECTOR_MIN_EDGE_WHALE  # Smart money signal reduces bar
             logger.info(f"Director: WHALE_TRACKER signal detected — relaxed edge threshold: {effective_min_edge}")
         else:
             effective_min_edge = settings.PAPER_MIN_EDGE_NET  # Full strictness for pure discovery
@@ -735,12 +780,12 @@ class DirectorAgent:
                     # (c) Decision flipped → log the change
                     should_log = True
                     logger.info(f"[PAPER] Decision FLIPPED for {market_id}: {prev_decision} → {paper_status}. Logging.")
-                elif price_delta > 0.02:
+                elif price_delta > settings.DIRECTOR_PAPER_LOG_PRICE_DELTA:
                     # (b) Material price change → log update
                     should_log = True
                     logger.info(f"[PAPER] Price changed for {market_id}: {prev_ask:.3f} → {best_ask:.3f} (Δ={price_delta:.3f}). Logging.")
                 else:
-                    logger.debug(f"[PAPER] Skipping duplicate log for {market_id} (same decision, price Δ={price_delta:.4f} < 0.02)")
+                    logger.debug(f"[PAPER] Skipping duplicate log for {market_id} (same decision, price Δ={price_delta:.4f} < {settings.DIRECTOR_PAPER_LOG_PRICE_DELTA})")
             
             if should_log:
                 try:
@@ -762,7 +807,8 @@ class DirectorAgent:
                         "best_bid": best_bid,
                         "spread": round(spread, 4),
                         "detected_at": datetime.now(timezone.utc).isoformat(),
-                        "source": source
+                        "source": source,
+                        "end_date_iso": m_data.get("end_date_iso") if 'm_data' in locals() else None
                     }
                     supabase.table("autonomous_logs").insert(paper_entry).execute()
                     logger.info(f"[PAPER] Logged {paper_status} for {market_id}")
@@ -872,7 +918,8 @@ class DirectorAgent:
                 "best_bid": best_bid,
                 "spread": spread,
                 "detected_at": datetime.now(timezone.utc).isoformat(),
-                "source": source
+                "source": source,
+                "end_date_iso": m_data.get("end_date_iso") if 'm_data' in locals() else None
             }
             supabase.table("autonomous_logs").insert(log_entry).execute()
             logger.info(f"Director: Logged decision {decision_status} for {market_id}")

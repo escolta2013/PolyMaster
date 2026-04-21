@@ -85,7 +85,7 @@ class SmartMoneyTracker:
         await self._process_potential_smart_money(vip_wallets)
         
         # 1. Fetch top markets with high volume
-        markets = await self.indexer.get_top_markets(limit=3)
+        markets = await self.indexer.get_top_markets(limit=settings.TRACKER_MARKET_SCAN_LIMIT)
         
         async with httpx.AsyncClient() as client:
             for market in markets:
@@ -176,7 +176,7 @@ class SmartMoneyTracker:
                     logger.success(f"SMART MONEY UPDATED: {addr[:10]}... (Grade {grade}, ROI {roi:.1%})")
                 
                 # Small delay to avoid Data API 429s
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(settings.TRACKER_SLEEP_SEC)
                     
             except Exception as e:
                 logger.debug(f"Error processing wallet {addr[:10]}: {e}")
@@ -190,7 +190,7 @@ class SmartMoneyTracker:
         markets = {}
         for pos in positions:
             # Only consider active positions with meaningful size
-            if float(pos.get("size", 0)) > 1.0: # Ignore dust
+            if float(pos.get("size", 0)) > settings.TRACKER_DUST_THRESHOLD: # Ignore dust
                 cond_id = pos.get("conditionId")
                 slug = pos.get("slug")
                 

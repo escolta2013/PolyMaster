@@ -214,11 +214,53 @@
   }
 
   /* Flash animation for new data */
+  /* Modal styles */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+    backdrop-filter: blur(8px); z-index: 1000; align-items: center; justify-content: center;
+    padding: 20px;
+  }
+  .modal-content {
+    background: var(--bg-panel); border: 1px solid var(--border-light);
+    border-radius: 20px; width: 100%; max-width: 500px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.8);
+    position: relative; overflow: hidden;
+  }
+  .modal-header {
+    background: rgba(255,255,255,0.03); padding: 20px 24px;
+    border-bottom: 1px solid var(--border-light);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .modal-body { padding: 24px; }
+  .modal-footer { padding: 16px 24px; background: rgba(0,0,0,0.2); text-align: right; border-top: 1px solid var(--border-light); }
+  
+  .detail-row { display: flex; justify-content: space-between; margin-bottom: 16px; border-bottom: 1px solid rgba(255,255,255,0.03); padding-bottom: 8px; }
+  .detail-label { color: var(--text-secondary); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .detail-value { font-family: 'Share Tech Mono', monospace; font-size: 15px; }
+
   @keyframes updateFlash { 0% { color: #fff; text-shadow: 0 0 15px #fff; } 100% { } }
   .flash-update { animation: updateFlash 1s ease-out; }
+  
+  .cursor-pointer { cursor: pointer; }
 </style>
 </head>
 <body>
+
+<!-- DETAIL MODAL -->
+<div id="trade-modal" class="modal-overlay" onclick="closeModal(event)">
+  <div class="modal-content" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <div class="panel-title" id="modal-title">TRADE DETAILS</div>
+      <button onclick="closeModal()" style="background:none; border:none; color:var(--text-secondary); font-size:24px; cursor:pointer;">&times;</button>
+    </div>
+    <div class="modal-body" id="modal-body">
+      <!-- Injected by JS -->
+    </div>
+    <div class="modal-footer">
+      <button onclick="closeModal()" style="padding: 8px 16px; border-radius: 8px; background: rgba(255,255,255,0.1); border: 1px solid var(--border-light); color: white; cursor: pointer;">Close</button>
+    </div>
+  </div>
+</div>
 
 <div class="container">
   
@@ -363,14 +405,17 @@ function updateValue(id, val, formatClass = '') {
   }
 }
 
+let currentTrades = [];
+
 function renderTrades(trades) {
+  currentTrades = trades;
   const tl = document.getElementById('trades-list');
   if (!trades || trades.length === 0) {
     tl.innerHTML = '<div style="color:var(--text-secondary);font-size:13px;text-align:center;padding:20px">No deployments yet</div>';
     return;
   }
   
-  const html = trades.slice(0, 5).map(t => {
+  const html = trades.slice(0, 10).map((t, idx) => {
     const q = (t.market_question || t.market_id || '?').substring(0, 50) + '...';
     const score = t.council_score ? t.council_score.toFixed(2) : 'N/A';
     
@@ -384,7 +429,7 @@ function renderTrades(trades) {
     else if (d === 'REJECTED' || d === 'SKIPPED') { icon = 'REJ'; iClass = 'icon-rej'; }
 
     return `
-      <div class="trade-item">
+      <div class="trade-item cursor-pointer" onclick="showTradeDetails(${idx})">
         <div class="trade-icon ${iClass}">${icon}</div>
         <div class="trade-info">
           <div class="trade-market" title="${t.market_question}">${q}</div>
@@ -398,6 +443,79 @@ function renderTrades(trades) {
   }).join('');
   
   if (tl.innerHTML !== html) tl.innerHTML = html;
+}
+
+function closeModal() { document.getElementById('trade-modal').style.display = 'none'; }
+
+function showTradeDetails(idx) {
+  const t = currentTrades[idx];
+  if (!t) return;
+  
+  const modal = document.getElementById('trade-modal');
+  const body = document.getElementById('modal-body');
+  
+  // Calculate time remaining
+  let timeStr = "Resolution time not set";
+  if (t.end_date_iso) {
+    const end = new Date(t.end_date_iso);
+    const now = new Date();
+    const diff = end - now;
+    if (diff < 0) {
+      timeStr = "Ended / Resolving...";
+    } else {
+      const d = Math.floor(diff / (1000 * 60 * 60 * 24));
+      const h = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      timeStr = `${d}d ${h}h ${m}m remaining`;
+    }
+  }
+
+  body.innerHTML = `
+    <div style="font-weight:600; font-size:14px; margin-bottom:20px; color:white; line-height:1.4;">
+      ${t.market_question || 'Market ID: ' + t.market_id}
+    </div>
+    
+    <div class="detail-row">
+      <span class="detail-label">Status</span>
+      <span class="detail-value" style="color:${(t.correct||'').toUpperCase()==='WIN'?'var(--accent-green)':'var(--text-primary)'}">${t.correct || 'PENDING'}</span>
+    </div>
+
+    <div class="detail-row">
+      <span class="detail-label">Invested (USDC)</span>
+      <span class="detail-value">$${(t.invested_usdc || 0).toFixed(2)}</span>
+    </div>
+
+    <div class="detail-row">
+      <span class="detail-label">Shares Owned</span>
+      <span class="detail-value">${(t.shares_owned || 0).toFixed(2)}</span>
+    </div>
+
+    <div class="detail-row">
+      <span class="detail-label">Entry Price (Avg)</span>
+      <span class="detail-value">$${(t.avg_entry_price || 0).toFixed(3)}</span>
+    </div>
+
+    <div class="detail-row">
+      <span class="detail-label">Council Score</span>
+      <span class="detail-value" style="color:var(--accent-cyan)">${t.council_score ? t.council_score.toFixed(2) : 'N/A'}</span>
+    </div>
+
+    <div class="detail-row">
+      <span class="detail-label">Detected At</span>
+      <span class="detail-value">${new Date(t.detected_at).toLocaleString()}</span>
+    </div>
+
+    <div class="detail-row" style="border-bottom:none; margin-top:10px;">
+      <span class="detail-label">Time to Finish</span>
+      <span class="detail-value" style="color:var(--accent-amber)">${timeStr}</span>
+    </div>
+    
+    <div style="margin-top:20px; font-size:10px; color:var(--text-secondary); text-align:center;">
+       Market ID: <span style="font-family:monospace">${t.market_id}</span>
+    </div>
+  `;
+  
+  modal.style.display = 'flex';
 }
 
 async function fetchStatus() {

@@ -43,7 +43,8 @@ class CachedAnalysis:
     def ttl_seconds(self) -> int:
         """Dynamic TTL based on time remaining until market resolution."""
         if not self.end_date:
-            return 4 * 3600  # 4 hours default if no end_date known
+            from app.core.config import settings
+            return settings.COUNCIL_CACHE_DEFAULT_TTL_HOURS * 3600  # Default hours if no end_date known
 
         now = datetime.now(timezone.utc)
         time_to_end = (self.end_date - now).total_seconds()
@@ -130,8 +131,9 @@ class CouncilCache:
                 return None
 
             # Check whale convergence change
-            # If ≥2 more whales entered since we cached, the signal changed
-            if current_whale_count > 0 and current_whale_count >= entry.whale_count + 2:
+            # If ≥ N more whales entered since we cached, the signal changed
+            from app.core.config import settings
+            if current_whale_count > 0 and current_whale_count >= entry.whale_count + settings.COUNCIL_CACHE_WHALE_DELTA:
                 self._misses += 1
                 logger.info(
                     f"Cache INVALIDATED (new whales): '{entry.market_question[:40]}…' "
@@ -142,7 +144,8 @@ class CouncilCache:
 
             # Cache HIT
             self._hits += 1
-            self._tokens_saved_estimate += 4000  # ~4 agents × ~1000 tokens each
+            from app.core.config import settings
+            self._tokens_saved_estimate += settings.COUNCIL_CACHE_TOKEN_ESTIMATE  # ~4 agents × ~1000 tokens each
 
             logger.info(
                 f"Cache HIT: '{entry.market_question[:40]}... ' "

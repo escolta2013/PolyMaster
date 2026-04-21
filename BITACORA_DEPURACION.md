@@ -91,3 +91,75 @@ Este documento registra los cambios realizados al bot durante su ejecución loca
   - Configuración de la nueva OpenRouter API Key y verificación del modelo `google/gemma-4-31b-it:free`.
 - **Razón:** Completar la migración obligatoria de Polymarket y asegurar que todos los componentes del sistema utilicen los estándares de la nueva API.
 - **Efecto esperado:** Estabilidad total ante el cambio del 1 de mayo y capacidad de análisis de IA restaurada en EC2.
+
+---
+
+### Fecha: 15 de Abril de 2026 (Estabilización del Motor Autónomo)
+
+**10. Resolución de Fallas Críticas en el Concilio de IA (Error 401/429)**
+- **Archivos modificados:**
+  - `backend/app/engines/council/orchestrator.py`
+  - `backend/app/engines/autonomous/director.py`
+  - `backend/run_autonomous_loop.py`
+  - `backend/.env` (Configuración de Keys)
+- **Cambios realizados:**
+  - **Detección de 401:** Se modificó el `Orchestrator` para que ya no oculte errores de autenticación. Ahora lanza un `RuntimeError` inmediato si la API Key falla (401), evitando el fallback silencioso a `0.5`.
+  - **Protección de Caché:** El `Director` ahora captura fallos del Council y **no cachea** scores de `0.5` producidos por errores de API. Esto evita "envenenar" la memoria del bot con datos basura.
+  - **Validación al Startup:** El loop principal ahora ejecuta una prueba de conexión a la IA al arrancar. Si falla, genera un log `CRITICAL` muy visible.
+  - **Corrección de Variables:** Se renombró el uso de variables en el `.env`. Se movió la key de OpenRouter a `OPENROUTER_API_KEY` para evitar confusión con el backend nativo de OpenAI.
+  - **Cambio de Modelo (SOTA):** Se migró de `google/gemma-4-31b-it:free` (que daba abundantes errores 429 de saturación) a `openai/gpt-4o-mini`.
+- **Nuevo Tool de Diagnóstico:** Se creó `backend/test_council_key.py` para verificar salud de la IA sin correr todo el bot.
+- **Razón:** El bot estaba "ciego" (todos los scores eran 0.5) debido a una configuración de API incorrecta en el servidor EC2 y saturación del modelo gratuito.
+- **Efecto esperado:** Restauración total de la capacidad de análisis. El bot ahora producirá scores reales (0.30 - 0.85) y podrá ejecutar trades de alta confianza.
+
+
+---
+
+### Fecha: 16 de Abril de 2026 (Centralización de Configuración y Upgrade de Clima)
+
+**11. Centralización de Límites y Presupuestos**
+- **Archivos modificados:** pp/core/config.py, .env.example, y motores (director.py, cache.py, orchestrator.py, 	racker.py).
+- **Cambios realizados:** Se migró TODA la lógica hardcodeada de presupuestos y topes de confianza al .env (Pydantic Settings).
+- **Razón:** Permitir ajustes en caliente ( límite) y corregir el error crítico de Polymarket Size lower than the minimum: 5.
+
+**12. Consenso Robusto Multi-API (Weather Engine)**
+- **Archivos modificados:** pp/engines/weather/manager.py
+- **Cambios realizados:** El motor de Clima pasó de consultar 1 sola API (Open-Meteo) a un consenso unánime de 3 APIs (Open-Meteo, WeatherAPI, NOAA). Se introdujo geolocalización ligera (is_us: True) al diccionario para evitar colapsos al consultar la NOAA en mercados de París o Londres.
+- **Razón:** Blindar la lógica contra fallos de red en sensores climatológicos y replicar la asimetría ganadora del Smart Money en mercados sub-eficientes.
+
+---
+
+### Fecha: 17 de Abril de 2026 (Estabilización y Automatización de Cobros)
+
+**13. Implementación del Motor de Auto-Redeem (Cobro Automático de Ganancias)**
+- **Archivos modificados:**
+  - `backend/app/engines/wallet/redeemer.py` (Nuevo motor)
+  - `backend/run_autonomous_loop.py` (Integración en el Loop)
+- **Cambios realizados:** 
+  - Se creó una clase `AutoRedeemer` que interactúa directamente con el contrato de Polymarket (Conditional Tokens) en Polygon.
+  - Se integró en el `OutcomeResolver` del bot para que, al detectar un trade con estado `WIN`, se dispare automáticamente la transacción de reclamo de USDC on-chain.
+- **Razón:** El usuario tenía que entrar manualmente a Polymarket para "aceptar" las ganancias. Ahora el dinero vuelve a la billetera de trading de forma autónoma, cerrando el ciclo de capital.
+- **Efecto esperado:** Flujo de caja 100% autónomo. El balance disponible aumentará solo tras cada acierto.
+
+**14. Sizing Dinámico y "Test Mode" de Bajo Presupuesto ($5.50)**
+- **Archivo modificado:** `backend/app/engines/weather/manager.py`
+- **Cambios realizados:** 
+  - Se implementó una comprobación de balance en tiempo real antes de cada apuesta.
+  - Se estableció un tamaño de trade fijo de **$5.50** (ligeramente superior al mínimo de ~$5.00 de Polymarket) mientras se valida la estrategia.
+- **Razón:** El bot intentaba apostar $25.00 con un balance de solo $17.00, lo que causaba fallos de ejecución. Con $5.50, el bot puede hacer múltiples trades de prueba con poco capital.
+- **Efecto esperado:** Ejecución exitosa de trades incluso con balances bajos. Ya se confirmó el primer trade de prueba exitoso (`0x15df...`).
+
+**15. Vinculación Persistente de Wallet Proxy en Supabase**
+- **Archivo modificado:** `backend/app/engines/wallet/manager.py`
+- **Cambios realizados:** 
+  - Se añadió el método `link_proxy_wallet` para permitir el registro seguro de la dirección proxy y la llave privada en la base de datos vinculada al usuario.
+- **Razón:** Asegurar que el bot siempre tenga acceso a las credenciales correctas para firmar transacciones en la red Polygon sin depender de archivos locales volátiles.
+- **Efecto esperado:** Persistencia de credenciales y mayor seguridad operativa.
+
+**16. Corrección de Error en Logs de Clima (`NameError: actual_temp`)**
+- **Archivo modificado:** `backend/app/engines/weather/manager.py`
+- **Cambios realizados:** 
+  - Se corrigió la referencia a la variable `actual` que se estaba intentando loguear como `actual_temp`.
+- **Razón:** Un error tipográfico causaba que el bot se detuviera justo después de ejecutar un trade exitoso, impidiendo los logs y notificaciones de Telegram.
+- **Efecto esperado:** Ciclos de trading limpios y notificaciones de éxito completas.
+

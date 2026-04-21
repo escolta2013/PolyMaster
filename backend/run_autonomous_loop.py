@@ -25,6 +25,7 @@ from app.engines.weather import weather_manager
 from app.engines.rewards.grinder import rewards_manager
 from app.engines.council.cache import council_cache
 from app.services.telegram_bot import telegram
+from app.engines.wallet.redeemer import redeemer
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -358,8 +359,19 @@ class OutcomeResolver:
                         if api_end_date and row.get("end_date_iso") is None:
                             payload["end_date_iso"] = api_end_date
                         updates.append(payload)
-                        if new_status == "WIN": wins += 1
-                        elif new_status == "LOSS": losses += 1
+                        if new_status == "WIN": 
+                            wins += 1
+                            # TRIGGER AUTO-REDEEM
+                            condition_id = data.get("conditionId")
+                            if condition_id:
+                                try:
+                                    # Non-blocking, start the redemption task
+                                    logger.info("[RESOLVER] WIN detected. Initiating Relayer batch redemption sweep.")
+                                    asyncio.create_task(redeemer.redeem_all_resolved())
+                                except Exception as red_e:
+                                    logger.error(f"[RESOLVER] Handover to AutoRedeem failed: {red_e}")
+                        elif new_status == "LOSS": 
+                            losses += 1
                     else:
                         if api_end_date and row.get("end_date_iso") is None:
                             updates.append({"id": row_id, "correct": "PENDING", "end_date_iso": api_end_date})
@@ -385,6 +397,27 @@ class OutcomeResolver:
                             payload["end_date_iso"] = upd["end_date_iso"]
                         sb.table("autonomous_logs").update(payload).eq("id", upd["id"]).execute()
                         processed_ok += 1
+                        
+                        # -- PATCH: Synchronize P&L to copy_trades --
+                        try:
+                            # We fetch the row again or use the cached 'row' from the loop if we were still in it.
+                            # But since we are outside the loop in a batch update, we need a different approach.
+                            # Re-fetching the log entry to get market_id and outcome.
+                            log_entry = sb.table("autonomous_logs").select("market_id, outcome").eq("id", upd["id"]).single().execute()
+                            if log_entry.data:
+                                m_id = log_entry.data["market_id"]
+                                trade_side = log_entry.data["outcome"]
+                                status = upd["correct"]
+                                
+                                # Find matching trades in copy_trades
+                                trades_to_update = sb.table("copy_trades").select("id, shares").eq("market_id", m_id).eq("outcome", trade_side).execute()
+                                
+                                for t in (trades_to_update.data or []):
+                                    ov = float(t["shares"]) if status == "WIN" else 0.0
+                                    sb.table("copy_trades").update({"outcome_value": ov}).eq("id", t["id"]).execute()
+                                    logger.debug(f"[RESOLVER] Updated copy_trade {t['id']} with P&L outcome: ${ov}")
+                        except Exception as pnl_sync_e:
+                            logger.error(f"[RESOLVER] P&L Sync to copy_trades failed for log {upd['id']}: {pnl_sync_e}")
                     except Exception as upd_e:
                         logger.error(f"[RESOLVER] Failed to update row {upd['id']}: {upd_e}")
                         errors += 1
@@ -423,6 +456,19 @@ async def autonomous_loop():
     logger.info(f"Rewards Farming: {'ENABLED' if settings.ENABLE_REWARDS_FARMING else 'DISABLED'}")
     logger.info("Dynamic Scheduler: ENABLED")
     logger.info("  <6h  → every 5min | <24h → every 15min | <7d → every 1h | >7d → every 4h")
+
+    # ── STARTUP: Validate Council API Key ────────────────────────────────────
+    # If the key is invalid, ALL council scores will be 0.5 and NOTHING will ever
+    # execute (threshold=0.68 is never reachable). Detect this early and loudly.
+    logger.info("Validating Council API key...")
+    key_valid = await director.council.validate_api_key()
+    if not key_valid:
+        logger.critical(
+            "🔑 COUNCIL API KEY INVALID OR MISSING — The autonomous loop will run BUT "
+            "no trades will execute because all Council scores will be stuck at 0.5. "
+            "Update OPENAI_API_KEY or OPENROUTER_API_KEY in backend/.env and restart."
+        )
+    # ─────────────────────────────────────────────────────────────────────────
 
     # Notify Telegram that the bot is online
     await telegram.bot_started(mode=mode_str)

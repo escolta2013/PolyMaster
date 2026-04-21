@@ -64,6 +64,32 @@ class WalletManager:
         except Exception:
             pass
 
+    async def link_proxy_wallet(self, user_id: str, private_key: str, proxy_address: str) -> str:
+        """
+        Links an existing private key and proxy address to a user in Supabase.
+        """
+        logger.info(f"Linking existing proxy wallet for user {user_id}: {proxy_address}")
+        
+        # Encrypt private key
+        encrypted_pk = vault.encrypt_key(private_key)
+        
+        # Store in DB
+        try:
+            data = {
+                "user_id": user_id,
+                "proxy_address": proxy_address,
+                "encrypted_private_key": encrypted_pk,
+                "created_at": datetime.utcnow().isoformat(),
+                "balance_usdc": 0.0
+            }
+            self.supabase.table("user_wallets").upsert(data, on_conflict="user_id").execute()
+            
+            logger.success(f"Proxy wallet linked and stored: {proxy_address}")
+            return proxy_address
+        except Exception as e:
+            logger.error(f"Failed to link proxy wallet for user {user_id}: {e}")
+            raise e
+
     def generate_proxy_wallet(self, user_id: str) -> Dict[str, str]:
         """
         Generates a new Ethereum account and stores it in Supabase for the user.

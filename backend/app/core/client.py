@@ -42,9 +42,9 @@ class PolyClient:
             # because maker=EOA has no funds/allowances on the exchange.
             # ──────────────────────────────────────────────────────────────────
             if is_proxy:
-                sig_type = 1  # POLY_PROXY — PK signs, proxy wallet is the maker
+                sig_type = 2  # GNOSIS_SAFE/POLY_PROXY — PK signs, proxy wallet is the maker
                 funder = settings.POLY_PROXY_ADDRESS
-                logger.info(f"Proxy wallet detected. Using sig_type=1 (POLY_PROXY) with funder={funder}")
+                logger.info(f"Proxy wallet detected. Using sig_type=2 (GNOSIS_SAFE) with funder={funder}")
             else:
                 sig_type = 0  # EOA — direct signing, no proxy
                 funder = None
@@ -85,9 +85,9 @@ class PolyClient:
             except Exception as e:
                 # ── Fallback Chain ─────────────────────────────────────────
                 # If primary sig_type fails, try the alternative:
-                #   sig_type=1 failed → try sig_type=0 (maybe PK IS the account)
-                #   sig_type=0 failed → try sig_type=1 (maybe it's a proxy after all)
-                alt_sig_type = 0 if sig_type == 1 else 1
+                #   sig_type=2 failed → try sig_type=0 (maybe PK IS the account)
+                #   sig_type=0 failed → try sig_type=2 (maybe it's a proxy after all)
+                alt_sig_type = 0 if sig_type in (1, 2) else 2
                 alt_funder = None if alt_sig_type == 0 else (funder or settings.POLY_PROXY_ADDRESS if hasattr(settings, 'POLY_PROXY_ADDRESS') else None)
                 logger.warning(f"Authentication failed with Type {sig_type}: {e}. Trying Type {alt_sig_type} fallback...")
                 try:
@@ -115,7 +115,7 @@ class PolyClient:
         Used for executing trades on behalf of proxy wallets.
         """
         is_proxy = hasattr(settings, 'POLY_PROXY_ADDRESS') and settings.POLY_PROXY_ADDRESS
-        sig_type = 1 if is_proxy else 0
+        sig_type = 2 if is_proxy else 0
         funder = settings.POLY_PROXY_ADDRESS if is_proxy else None
         
         try:
@@ -134,8 +134,8 @@ class PolyClient:
             client.set_api_creds(creds)
             return client
         except Exception as e:
-            # Fallback for EOA if sig_type=1 failed
-            if sig_type == 1:
+            # Fallback for EOA if sig_type=2 failed
+            if sig_type in (1, 2):
                 logger.warning(f"Failed to create authenticated client as Proxy: {e}. Retrying as EOA...")
                 try:
                     client = PolymarketClobClient(host=self.host, key=pk, chain_id=137, signature_type=0)

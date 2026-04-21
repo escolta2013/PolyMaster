@@ -23,23 +23,23 @@ class WeatherManager:
     """
 
     CITY_COORDS = {
-        "NYC": {"lat": 40.71, "lon": -74.00},
-        "New York": {"lat": 40.71, "lon": -74.00},
-        "Dallas": {"lat": 32.77, "lon": -96.79},
-        "Chicago": {"lat": 41.87, "lon": -87.62},
-        "London": {"lat": 51.50, "lon": -0.12},
-        "Seoul": {"lat": 37.56, "lon": 126.97},
-        "Wellington": {"lat": -41.28, "lon": 174.77},
-        "Paris": {"lat": 48.85, "lon": 2.35},
-        "Miami": {"lat": 25.76, "lon": -80.19},
-        "Phoenix": {"lat": 33.44, "lon": -112.07},
-        "Los Angeles": {"lat": 34.05, "lon": -118.24},
-        "Ankara": {"lat": 39.93, "lon": 32.85},
-        "Istanbul": {"lat": 41.01, "lon": 28.97},
-        "Madrid": {"lat": 40.41, "lon": -3.70},
-        "Barcelona": {"lat": 41.38, "lon": 2.17},
-        "Tokyo": {"lat": 35.67, "lon": 139.65},
-        "Singapore": {"lat": 1.35, "lon": 103.82},
+        "NYC": {"lat": 40.71, "lon": -74.00, "is_us": True},
+        "New York": {"lat": 40.71, "lon": -74.00, "is_us": True},
+        "Dallas": {"lat": 32.77, "lon": -96.79, "is_us": True},
+        "Chicago": {"lat": 41.87, "lon": -87.62, "is_us": True},
+        "London": {"lat": 51.50, "lon": -0.12, "is_us": False},
+        "Seoul": {"lat": 37.56, "lon": 126.97, "is_us": False},
+        "Wellington": {"lat": -41.28, "lon": 174.77, "is_us": False},
+        "Paris": {"lat": 48.85, "lon": 2.35, "is_us": False},
+        "Miami": {"lat": 25.76, "lon": -80.19, "is_us": True},
+        "Phoenix": {"lat": 33.44, "lon": -112.07, "is_us": True},
+        "Los Angeles": {"lat": 34.05, "lon": -118.24, "is_us": True},
+        "Ankara": {"lat": 39.93, "lon": 32.85, "is_us": False},
+        "Istanbul": {"lat": 41.01, "lon": 28.97, "is_us": False},
+        "Madrid": {"lat": 40.41, "lon": -3.70, "is_us": False},
+        "Barcelona": {"lat": 41.38, "lon": 2.17, "is_us": False},
+        "Tokyo": {"lat": 35.67, "lon": 139.65, "is_us": False},
+        "Singapore": {"lat": 1.35, "lon": 103.82, "is_us": False},
     }
 
     def __init__(self):
@@ -69,7 +69,7 @@ class WeatherManager:
             # Polymarket use tags or search
             params = {
                 "active": True,
-                "limit": 50,
+                "limit": settings.WEATHER_SCAN_LIMIT,
                 "order": "volume",
                 "ascending": False,
                 # Hardcoded tags or keyword search in titles
@@ -117,11 +117,16 @@ class WeatherManager:
         elif any(c in question for c in ["Seoul", "London", "Paris", "Ankara", "Istanbul", "Madrid", "Barcelona", "Tokyo", "Singapore", "Wellington"]):
             unit = "celsius"
 
-        # 4. Fetch Live Weather Data (Open-Meteo)
-        actual_temp = await self._get_live_weather(coords["lat"], coords["lon"], unit=unit)
-        if actual_temp is None: return
+        # 4. Fetch Live Weather Data Consensus
+        actual_temps = await self._get_live_weather_consensus(coords, unit)
+        if not actual_temps or len(actual_temps) < 2:
+            logger.debug(f"Weather Exploit [Consensus Failed]: Only {len(actual_temps) if actual_temps else 0} APIs returned valid data for {city}.")
+            return
+            
+        # Determine strict consensus actual_temp for logging
+        actual_temp = round(sum(actual_temps) / len(actual_temps), 2)
         
-        # 4. Compare with Market Price
+        # 5. Compare with Market Price
         # We need the YES token
         token_ids = market.get("clobTokenIds", [])
         if isinstance(token_ids, str):
@@ -150,18 +155,18 @@ class WeatherManager:
         
         if is_greater:
             # Case: Will it reach 62°F? 
-            # If actual is ALREADY 63°F -> YES is 100% physically certain.
-            if actual_temp >= (threshold + 0.2): # small buffer
-                if current_price < 0.90: # Market is slow!
+            # ALL apis must report that actual temp is >= threshold
+            if all(t >= (threshold + 0.2) for t in actual_temps):
+                if current_price < settings.WEATHER_ENTRY_THRESHOLD_HIGH: # Market is slow!
                     edge_found = True
-                    reason = f"Actual temp ({actual_temp}) already above threshold ({threshold}). Market price {current_price} is lagging."
+                    reason = f"Consensus temps {actual_temps} ALL above threshold ({threshold}). Market price {current_price} is lagging."
         else:
             # Case: Will it stay below 60°F? 
-            # If actual is ALREADY 62°F -> NO is 100%. YES is 0%.
-            if actual_temp > (threshold + 0.2):
-                if current_price > 0.10: # YES is still priced high
+            # ALL apis must report that actual temp > threshold
+            if all(t > (threshold + 0.2) for t in actual_temps):
+                if current_price > settings.WEATHER_ENTRY_THRESHOLD_LOW: # YES is still priced high
                     edge_found = True
-                    reason = f"Actual temp ({actual_temp}) already EXCEEDED threshold ({threshold}). YES should be 0, but is {current_price}."
+                    reason = f"Consensus temps {actual_temps} ALL EXCEEDED threshold ({threshold}). YES should be 0, but is {current_price}."
 
         if edge_found:
             # 1. Check local memory (fast)
@@ -178,6 +183,12 @@ class WeatherManager:
                 if existing.data:
                     logger.debug(f"Weather Exploit: Market {market_id} record found in DB. Skipping.")
                     self.executed_markets.add(market_id)
+                    return
+                
+                # Minimum Budget Check
+                min_size = getattr(settings, "MIN_ORDER_SIZE_USD", 5.0)
+                if settings.WEATHER_MAX_BUDGET < min_size:
+                    logger.warning(f"Weather Exploit: Budget ({settings.WEATHER_MAX_BUDGET}) is below minimum required ({min_size}). Skipping.")
                     return
                 
                 # Add to local memory immediately to prevent race conditions within the same cycle
@@ -208,25 +219,79 @@ class WeatherManager:
             
         return None
 
-    async def _get_live_weather(self, lat: float, lon: float, unit: str = "fahrenheit") -> Optional[float]:
-        """Fetch current temperature from Open-Meteo (NOAA HRRR source for US)."""
+    async def _get_live_weather_consensus(self, coords: Dict[str, Any], unit: str) -> Optional[List[float]]:
+        lat, lon = coords["lat"], coords["lon"]
+        is_us = coords.get("is_us", False)
+        
         async with httpx.AsyncClient() as http:
-            try:
-                # Open-Meteo is free for non-commercial/low-volume
-                url = "https://api.open-meteo.com/v1/forecast"
-                params = {
-                    "latitude": lat,
-                    "longitude": lon,
-                    "current": "temperature_2m",
-                    "temperature_unit": unit,
-                    "forecast_days": 1
-                }
-                resp = await http.get(url, params=params, timeout=10)
-                resp.raise_for_status()
-                data = resp.json()
-                return data.get("current", {}).get("temperature_2m")
-            except Exception as e:
-                logger.error(f"Weather API Error: {type(e).__name__} - {str(e)}")
+            tasks = [
+                self._fetch_openmeteo(lat, lon, unit, http),
+                self._fetch_weatherapi(lat, lon, unit, http)
+            ]
+            if is_us:
+                tasks.append(self._fetch_noaa(lat, lon, unit, http))
+                
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            valid_temps = [r for r in results if isinstance(r, (int, float))]
+            return valid_temps
+
+    async def _fetch_openmeteo(self, lat: float, lon: float, unit: str, http: httpx.AsyncClient) -> Optional[float]:
+        try:
+            url = "https://api.open-meteo.com/v1/forecast"
+            params = {
+                "latitude": lat,
+                "longitude": lon,
+                "current": "temperature_2m",
+                "temperature_unit": unit,
+                "forecast_days": 1
+            }
+            resp = await http.get(url, params=params, timeout=10)
+            resp.raise_for_status()
+            return resp.json().get("current", {}).get("temperature_2m")
+        except Exception as e:
+            logger.error(f"Open-Meteo Error: {e}")
+        return None
+
+    async def _fetch_noaa(self, lat: float, lon: float, unit: str, http: httpx.AsyncClient) -> Optional[float]:
+        """Fetch current temperature from NOAA API (US ONLY)."""
+        try:
+            headers = {"User-Agent": "(PolyMasterTradingBot, admin@polymaster.com)"}
+            pts_url = f"https://api.weather.gov/points/{lat},{lon}"
+            pts_resp = await http.get(pts_url, headers=headers, timeout=10)
+            pts_resp.raise_for_status()
+            forecast_url = pts_resp.json().get("properties", {}).get("forecastHourly")
+            if not forecast_url: return None
+            
+            f_resp = await http.get(forecast_url, headers=headers, timeout=10)
+            f_resp.raise_for_status()
+            periods = f_resp.json().get("properties", {}).get("periods", [])
+            if periods:
+                temp_f = periods[0].get("temperature")
+                if unit == "celsius":
+                    return round((temp_f - 32) * 5.0 / 9.0, 1)
+                return temp_f
+        except httpx.HTTPStatusError as e:
+            logger.error(f"NOAA API Status Error ({e.response.status_code}) for {e.request.url}")
+        except httpx.TimeoutException:
+            logger.error("NOAA API Timeout: El servidor de NOAA no respondió a tiempo.")
+        except Exception as e:
+            logger.error(f"NOAA API Unexpected Error: {type(e).__name__} - {e}")
+        return None
+
+    async def _fetch_weatherapi(self, lat: float, lon: float, unit: str, http: httpx.AsyncClient) -> Optional[float]:
+        key = getattr(settings, "WEATHER_API_KEY", None)
+        if not key: return None
+        try:
+            url = f"http://api.weatherapi.com/v1/current.json?key={key}&q={lat},{lon}"
+            resp = await http.get(url, timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+            if unit == "fahrenheit":
+                return data.get("current", {}).get("temp_f")
+            else:
+                return data.get("current", {}).get("temp_c")
+        except Exception as e:
+            logger.error(f"WeatherAPI Error: {e}")
         return None
 
     async def _execute_trade(self, market: Dict, token_id: str, actual: float, threshold: float, reason: str):
@@ -264,9 +329,9 @@ class WeatherManager:
             logger.error(f"Weather Exploit: Cannot execute trade, no valid token IDs for {market.get('id')}")
             return
             
-        target_token = token_ids[0] # Default YES
-        
+        exec_outcome = "YES" # Default
         if "YES should be 0" in reason:
+            exec_outcome = "NO"
             # We want to buy NO. In Polymarket binary, it's usually the second token.
             if len(token_ids) > 1:
                 target_token = token_ids[1] # NO token
@@ -274,12 +339,31 @@ class WeatherManager:
                 logger.warning("Weather Exploit: Needed NO token but only one found.")
                 return
 
-        size_usdc = settings.WEATHER_MAX_BUDGET
-        logger.info(f"Weather Exploit [{mode}]: Placing trade on '{market.get('question')[:40]}...' | Reason: {reason}")
+        # Testing mode sizing: Use $5.50 (Polymarket minimum is ~$5.00)
+        # to allow multiple trades with small balance.
+        try:
+            balance = wallet_manager.get_onchain_balance(settings.POLY_PROXY_ADDRESS) if settings.POLY_PROXY_ADDRESS else 0.0
+            
+            # Use $5.50 as the preferred test size
+            test_size = 5.50
+            
+            # Cap it by balance just in case, but warn if below minimum
+            size_usdc = min(test_size, float(balance) * 0.95)
+            
+            if size_usdc < 5.0:
+                logger.warning(f"Weather Exploit [TEST MODE]: Balance too low for minimum $5 trade (Have: ${size_usdc:.2f}). Skipping.")
+                return
+        except Exception as b_e:
+            logger.warning(f"Weather Exploit: Could not fetch live balance, using fallback test size: {b_e}")
+            size_usdc = 5.50
+
+        logger.info(f"Weather Exploit [{mode}]: TEST MODE - Placing trade of ${size_usdc:.2f} | Reason: {reason}")
         
         if settings.COPY_SIMULATION:
             logger.success(f"Weather Exploit [SIM]: Would buy SHARES for {size_usdc} USDC on token {target_token}")
-            await self._log_to_supabase(market, actual, threshold, reason, decision="EXECUTED_SIM", token_id=target_token)
+            await self._log_to_supabase(market, actual, threshold, reason, decision="EXECUTED_SIM", token_id=target_token, size_usdc=size_usdc, outcome=exec_outcome)
+            # Log to copy_trades for dashboard stats
+            await self._log_copy_trade_record(market, target_token, exec_outcome, size_usdc, "SIM_EXEC")
         else:
             # Execution logic
             try:
@@ -305,23 +389,24 @@ class WeatherManager:
                         )
                     except Exception as te:
                         logger.error(f"Weather Telegram notification failed: {te}")
-                    await self._log_to_supabase(market, actual, threshold, reason, decision="EXECUTED_LIVE", token_id=target_token, order_id=order_id)
+                    await self._log_to_supabase(market, actual, threshold, reason, decision="EXECUTED_LIVE", token_id=target_token, size_usdc=size_usdc, order_id=order_id, outcome=exec_outcome)
+                    await self._log_copy_trade_record(market, target_token, exec_outcome, size_usdc, order_id)
                 else:
                     error_msg = res.get("message", "Unknown error")
                     logger.error(f"Weather Exploit [LIVE]: Execution failed: {error_msg}")
-                    await self._log_to_supabase(market, actual, threshold, reason, decision="FAILED", token_id=target_token)
+                    await self._log_to_supabase(market, actual, threshold, reason, decision="FAILED", token_id=target_token, size_usdc=size_usdc)
             except Exception as e:
                 logger.error(f"Weather Exploit [LIVE]: Execution exception: {e}")
-                await self._log_to_supabase(market, actual, threshold, reason, decision="ERROR", token_id=target_token)
+                await self._log_to_supabase(market, actual, threshold, reason, decision="ERROR", token_id=target_token, size_usdc=size_usdc, outcome=exec_outcome)
 
-    async def _log_to_supabase(self, market: Dict, actual: float, threshold: float, reason: str, decision: str, token_id: str, order_id: str = None):
+    async def _log_to_supabase(self, market: Dict, actual: float, threshold: float, reason: str, decision: str, token_id: str, size_usdc: float, outcome: str, order_id: str = None):
         try:
             from supabase import create_client
             supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
             supabase.table("autonomous_logs").insert({
                 "market_id": market.get("id"),
                 "market_question": f"[WEATHER] {market.get('question', '')[:200]}",
-                "outcome": "YES/NO (Weather)",
+                "outcome": outcome,
                 "council_score": 1.0, # Physical certainty
                 "decision": decision,
                 "token_id": token_id,
@@ -332,10 +417,41 @@ class WeatherManager:
                     "threshold": threshold,
                     "logic": reason
                 },
-                "size_usdc": settings.WEATHER_MAX_BUDGET,
-                "detected_at": datetime.now(timezone.utc).isoformat()
+                "size_usdc": size_usdc,
+                "detected_at": datetime.now(timezone.utc).isoformat(),
+                "end_date_iso": market.get("end_date_iso")
             }).execute()
         except Exception as e:
             logger.error(f"Weather Exploit: Failed to update Supabase log: {e}")
+
+    async def _log_copy_trade_record(self, market: Dict, token_id: str, outcome: str, size_usdc: float, order_id: str):
+        """Helper to log weather trades to copy_trades table for dashboard syncing."""
+        try:
+            from supabase import create_client
+            supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
+            
+            # Polymarket price at entry for weather engine is usually high (lagging)
+            # or low if we buy early. We don't have perfect price history here, 
+            # so we estimate it but the dashboard uses it for ROI.
+            # Best is to use a nominal price like 0.90 for successes.
+            estimated_price = 0.90
+            shares = size_usdc / estimated_price
+            
+            trade_record = {
+                "user_id": "WEATHER_ENGINE",
+                "source_wallet": "Consensus",
+                "token_id": token_id,
+                "market_id": market.get("id"),
+                "outcome": outcome,
+                "price": estimated_price,
+                "shares": round(shares, 2),
+                "usdc": size_usdc,
+                "order_id": order_id,
+                "simulation": settings.COPY_SIMULATION,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+            supabase.table("copy_trades").insert(trade_record).execute()
+        except Exception as e:
+            logger.error(f"Weather Exploit: Failed to log to copy_trades: {e}")
 
 weather_manager = WeatherManager()
