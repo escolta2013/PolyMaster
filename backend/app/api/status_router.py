@@ -102,7 +102,11 @@ def get_status():
             # Trades executed today
             exec_resp = (
                 sb.table("autonomous_logs")
-                .select("id, market_id, token_id, council_score, market_question, decision, correct, detected_at, outcome, end_date_iso")
+                .select(
+                    "id, market_id, token_id, council_score, market_question, "
+                    "decision, correct, detected_at, outcome, end_date_iso, "
+                    "size_usdc, best_ask, best_bid, spread, source, reasoning, cache_hit"
+                )
                 .in_("decision", ["EXECUTED", "WOULD_EXECUTE", "EXECUTED_LIVE", "REJECTED", "FAILED", "ERROR"])
                 .gte("detected_at", today)
                 .order("detected_at", desc=True)
@@ -114,17 +118,33 @@ def get_status():
             # Enrich with copy_trades data
             for t in raw_trades:
                 try:
-                    ct_resp = sb.table("copy_trades").select("usdc, shares, price").eq("market_id", t["market_id"]).eq("outcome", t["outcome"]).execute()
+                    ct_resp = sb.table("copy_trades").select("usdc, shares, price").eq("market_id", t["market_id"]).eq("outcome", t.get("outcome", "YES")).execute()
                     if ct_resp.data:
                         # Sum up all buys for this market/outcome combination
-                        t["invested_usdc"] = sum(float(r["usdc"]) for r in ct_resp.data)
-                        t["shares_owned"] = sum(float(r["shares"]) for r in ct_resp.data)
-                        t["avg_entry_price"] = t["invested_usdc"] / t["shares_owned"] if t["shares_owned"] > 0 else 0
+                        t["invested_usdc"] = round(sum(float(r["usdc"]) for r in ct_resp.data), 4)
+                        t["shares_owned"] = round(sum(float(r["shares"]) for r in ct_resp.data), 4)
+                        t["avg_entry_price"] = round(t["invested_usdc"] / t["shares_owned"], 4) if t["shares_owned"] > 0 else 0
                     else:
-                        t["invested_usdc"] = 0
+                        # Fall back to size_usdc from autonomous_logs if available
+                        fallback = t.get("size_usdc") or 0
+                        t["invested_usdc"] = round(float(fallback), 4)
                         t["shares_owned"] = 0
-                except Exception:
+                        t["avg_entry_price"] = round(float(t.get("best_ask") or 0), 4)
+                    
+                    # Potential payout: shares owned pay $1 each if correct
+                    shares = t.get("shares_owned", 0)
+                    invested = t.get("invested_usdc", 0)
+                    t["potential_payout"] = round(float(shares), 4) if shares else 0
+                    t["potential_profit"] = round(float(shares) - float(invested), 4) if shares and invested else 0
+                    t["potential_roi_pct"] = round((t["potential_profit"] / float(invested)) * 100, 1) if invested and invested > 0 else 0
+                except Exception as enrich_err:
+                    logger.warning(f"[StatusRouter] Enrich error for {t.get('market_id')}: {enrich_err}")
                     t["invested_usdc"] = 0
+                    t["shares_owned"] = 0
+                    t["avg_entry_price"] = 0
+                    t["potential_payout"] = 0
+                    t["potential_profit"] = 0
+                    t["potential_roi_pct"] = 0
             
             trades_today = len(raw_trades)
             recent_trades = raw_trades

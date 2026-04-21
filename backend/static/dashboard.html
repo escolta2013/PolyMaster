@@ -199,6 +199,12 @@
   .console-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
   .console-body::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
 
+  .modal-body::-webkit-scrollbar { width: 6px; }
+  .modal-body::-webkit-scrollbar-track { background: transparent; }
+  .modal-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 4px; }
+  .modal-body::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.16); }
+
+
   /* Overlay */
   #error-overlay {
     display: none;
@@ -222,16 +228,17 @@
   }
   .modal-content {
     background: var(--bg-panel); border: 1px solid var(--border-light);
-    border-radius: 20px; width: 100%; max-width: 500px;
+    border-radius: 20px; width: 100%; max-width: 560px;
     box-shadow: 0 20px 60px rgba(0,0,0,0.8);
     position: relative; overflow: hidden;
+    max-height: 90vh; display: flex; flex-direction: column;
   }
   .modal-header {
     background: rgba(255,255,255,0.03); padding: 20px 24px;
     border-bottom: 1px solid var(--border-light);
     display: flex; justify-content: space-between; align-items: center;
   }
-  .modal-body { padding: 24px; }
+  .modal-body { padding: 24px; overflow-y: auto; flex: 1; }
   .modal-footer { padding: 16px 24px; background: rgba(0,0,0,0.2); text-align: right; border-top: 1px solid var(--border-light); }
   
   .detail-row { display: flex; justify-content: space-between; margin-bottom: 16px; border-bottom: 1px solid rgba(255,255,255,0.03); padding-bottom: 8px; }
@@ -456,62 +463,175 @@ function showTradeDetails(idx) {
   
   // Calculate time remaining
   let timeStr = "Resolution time not set";
+  let timeColor = 'var(--text-secondary)';
   if (t.end_date_iso) {
     const end = new Date(t.end_date_iso);
     const now = new Date();
     const diff = end - now;
     if (diff < 0) {
       timeStr = "Ended / Resolving...";
+      timeColor = 'var(--accent-green)';
     } else {
       const d = Math.floor(diff / (1000 * 60 * 60 * 24));
       const h = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
       const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-      timeStr = `${d}d ${h}h ${m}m remaining`;
+      timeStr = d > 0 ? `${d}d ${h}h ${m}m remaining` : `${h}h ${m}m remaining`;
+      timeColor = diff < 3600000 ? 'var(--accent-red)' : 'var(--accent-amber)';
+    }
+  }
+
+  const invested = parseFloat(t.invested_usdc || 0);
+  const shares   = parseFloat(t.shares_owned || 0);
+  const ask      = parseFloat(t.best_ask || 0);
+  const bid      = parseFloat(t.best_bid || 0);
+  const spread   = parseFloat(t.spread || 0);
+  const score    = parseFloat(t.council_score || 0);
+  const payout   = parseFloat(t.potential_payout || 0);
+  const profit   = parseFloat(t.potential_profit || 0);
+  const roi      = parseFloat(t.potential_roi_pct || 0);
+  const status   = (t.correct || 'PENDING').toUpperCase();
+  const statusColor = status === 'WIN' ? 'var(--accent-green)' : status === 'LOSS' ? 'var(--accent-red)' : 'var(--text-primary)';
+
+  // ── Build reasoning block ──
+  let reasoningHTML = '';
+  if (t.reasoning) {
+    let reasonText = '';
+    if (typeof t.reasoning === 'object' && !Array.isArray(t.reasoning)) {
+      reasonText = Object.entries(t.reasoning)
+        .filter(([k, v]) => v && typeof v === 'string')
+        .map(([k, v]) => `<span style="color:var(--accent-cyan)">[${k}]</span> ${v.substring(0, 150)}${v.length > 150 ? '…' : ''}`)
+        .join('<br>');
+    } else {
+      reasonText = String(t.reasoning).substring(0, 500);
+    }
+    if (reasonText) {
+      reasoningHTML = `
+      <div style="margin:14px 0 4px;">
+        <div class="detail-label" style="margin-bottom:8px;">📋 Council Reasoning</div>
+        <div style="
+          background:rgba(0,0,0,0.45);
+          border:1px solid rgba(0,229,255,0.1);
+          border-radius:8px;
+          padding:12px 14px;
+          font-size:11px;
+          color:var(--text-secondary);
+          line-height:1.7;
+          max-height:130px;
+          overflow-y:auto;
+          font-family:'Share Tech Mono',monospace;
+        ">${reasonText}</div>
+      </div>`;
     }
   }
 
   body.innerHTML = `
-    <div style="font-weight:600; font-size:14px; margin-bottom:20px; color:white; line-height:1.4;">
+    <div style="font-weight:600;font-size:14px;margin-bottom:20px;color:white;line-height:1.4;">
       ${t.market_question || 'Market ID: ' + t.market_id}
     </div>
-    
+
     <div class="detail-row">
       <span class="detail-label">Status</span>
-      <span class="detail-value" style="color:${(t.correct||'').toUpperCase()==='WIN'?'var(--accent-green)':'var(--text-primary)'}">${t.correct || 'PENDING'}</span>
+      <span class="detail-value" style="color:${statusColor};font-weight:600">${status}</span>
     </div>
 
     <div class="detail-row">
-      <span class="detail-label">Invested (USDC)</span>
-      <span class="detail-value">$${(t.invested_usdc || 0).toFixed(2)}</span>
+      <span class="detail-label">💵 Invested (USDC)</span>
+      <span class="detail-value">${invested > 0 ? '$' + invested.toFixed(2) : '<span style="color:var(--text-secondary)">—</span>'}</span>
     </div>
 
     <div class="detail-row">
-      <span class="detail-label">Shares Owned</span>
-      <span class="detail-value">${(t.shares_owned || 0).toFixed(2)}</span>
+      <span class="detail-label">📈 Shares Owned</span>
+      <span class="detail-value">${shares > 0 ? shares.toFixed(2) + ' shares' : '<span style="color:var(--text-secondary)">—</span>'}</span>
     </div>
 
     <div class="detail-row">
-      <span class="detail-label">Entry Price (Avg)</span>
-      <span class="detail-value">$${(t.avg_entry_price || 0).toFixed(3)}</span>
+      <span class="detail-label">🏷 Avg Entry Price</span>
+      <span class="detail-value">${(t.avg_entry_price && t.avg_entry_price > 0) ? '$' + parseFloat(t.avg_entry_price).toFixed(3) : '<span style="color:var(--text-secondary)">—</span>'}</span>
+    </div>
+
+    ${payout > 0 ? `
+    <div class="detail-row" style="border-color:rgba(0,255,157,0.15)">
+      <span class="detail-label">🎯 Potential Payout</span>
+      <span class="detail-value" style="color:var(--accent-green)">$${payout.toFixed(2)} <span style="font-size:10px;opacity:0.6">(if YES resolves)</span></span>
+    </div>
+    <div class="detail-row" style="border-color:rgba(0,255,157,0.15)">
+      <span class="detail-label">💰 Potential Profit</span>
+      <span class="detail-value" style="color:${profit >= 0 ? 'var(--accent-green)' : 'var(--accent-red)'}">
+        ${profit >= 0 ? '+' : ''}$${profit.toFixed(2)}
+        <span style="font-size:11px;margin-left:6px;opacity:0.7">(${roi >= 0 ? '+' : ''}${roi.toFixed(1)}% ROI)</span>
+      </span>
+    </div>
+    ` : ''}
+
+    <div style="border-top:1px solid rgba(255,255,255,0.07);margin:10px 0 14px;"></div>
+
+    ${(ask > 0 || bid > 0) ? `
+    <div style="margin-bottom:10px;">
+      <div class="detail-label" style="margin-bottom:8px;">📊 Price Intelligence</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;text-align:center;">
+        <div style="background:rgba(0,229,255,0.08);border:1px solid rgba(0,229,255,0.15);border-radius:8px;padding:8px;">
+          <div style="font-size:10px;color:var(--text-secondary);margin-bottom:4px">BID</div>
+          <div style="font-family:'Share Tech Mono',monospace;color:var(--accent-cyan);font-size:14px">$${bid.toFixed(3)}</div>
+        </div>
+        <div style="background:rgba(255,176,0,0.08);border:1px solid rgba(255,176,0,0.15);border-radius:8px;padding:8px;">
+          <div style="font-size:10px;color:var(--text-secondary);margin-bottom:4px">ASK</div>
+          <div style="font-family:'Share Tech Mono',monospace;color:var(--accent-amber);font-size:14px">$${ask.toFixed(3)}</div>
+        </div>
+        <div style="background:rgba(${spread > 0.05 ? '255,51,102' : '255,255,255'},0.05);border:1px solid rgba(${spread > 0.05 ? '255,51,102' : '255,255,255'},0.1);border-radius:8px;padding:8px;">
+          <div style="font-size:10px;color:var(--text-secondary);margin-bottom:4px">SPREAD</div>
+          <div style="font-family:'Share Tech Mono',monospace;color:${spread > 0.05 ? 'var(--accent-red)' : 'var(--text-primary)'};font-size:14px">${(spread * 100).toFixed(1)}%</div>
+        </div>
+      </div>
+    </div>
+    <div style="border-top:1px solid rgba(255,255,255,0.07);margin:10px 0 14px;"></div>
+    ` : ''}
+
+    <div class="detail-row">
+      <span class="detail-label">🎯 Outcome Direction</span>
+      <span class="detail-value" style="color:var(--accent-cyan);font-weight:600">${t.outcome || '—'}</span>
     </div>
 
     <div class="detail-row">
-      <span class="detail-label">Council Score</span>
-      <span class="detail-value" style="color:var(--accent-cyan)">${t.council_score ? t.council_score.toFixed(2) : 'N/A'}</span>
+      <span class="detail-label">🧠 Council Score</span>
+      <span class="detail-value" style="color:${score >= 0.68 ? 'var(--accent-green)' : score >= 0.5 ? 'var(--accent-amber)' : 'var(--accent-red)'}">
+        ${score > 0 ? score.toFixed(3) : 'N/A'}
+        ${score > 0 ? `<span style="font-size:10px;opacity:0.6;margin-left:6px">${score >= 0.68 ? '✓ THRESHOLD MET' : '✗ BELOW 0.68'}</span>` : ''}
+      </span>
     </div>
+
+    ${t.cache_hit != null ? `
+    <div class="detail-row">
+      <span class="detail-label">Council Source</span>
+      <span class="detail-value" style="color:${t.cache_hit ? 'var(--accent-amber)' : 'var(--accent-cyan)'}">
+        ${t.cache_hit ? '📦 Cache Hit (0 tokens used)' : '🔮 Fresh Council Call'}
+      </span>
+    </div>
+    ` : ''}
+
+    ${t.source ? `
+    <div class="detail-row">
+      <span class="detail-label">Detection Engine</span>
+      <span class="detail-value" style="color:var(--text-secondary);font-size:12px">${t.source}</span>
+    </div>
+    ` : ''}
+
+    ${reasoningHTML}
+
+    <div style="border-top:1px solid rgba(255,255,255,0.07);margin:14px 0 10px;"></div>
 
     <div class="detail-row">
-      <span class="detail-label">Detected At</span>
-      <span class="detail-value">${new Date(t.detected_at).toLocaleString()}</span>
+      <span class="detail-label">🕐 Detected At</span>
+      <span class="detail-value" style="font-size:12px">${new Date(t.detected_at).toLocaleString()}</span>
     </div>
 
-    <div class="detail-row" style="border-bottom:none; margin-top:10px;">
-      <span class="detail-label">Time to Finish</span>
-      <span class="detail-value" style="color:var(--accent-amber)">${timeStr}</span>
+    <div class="detail-row" style="border-bottom:none">
+      <span class="detail-label">⏳ Time to Finish</span>
+      <span class="detail-value" style="color:${timeColor}">${timeStr}</span>
     </div>
-    
-    <div style="margin-top:20px; font-size:10px; color:var(--text-secondary); text-align:center;">
-       Market ID: <span style="font-family:monospace">${t.market_id}</span>
+
+    <div style="margin-top:16px;font-size:10px;color:rgba(255,255,255,0.2);text-align:center;display:flex;gap:16px;justify-content:center;flex-wrap:wrap;">
+      <span>Market: <span style="font-family:monospace;color:rgba(255,255,255,0.35)">${t.market_id}</span></span>
+      ${t.token_id ? `<span>Token: <span style="font-family:monospace;color:rgba(255,255,255,0.35)">${String(t.token_id).substring(0,14)}…</span></span>` : ''}
     </div>
   `;
   
