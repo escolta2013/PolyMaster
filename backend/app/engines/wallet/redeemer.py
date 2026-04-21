@@ -8,7 +8,9 @@ from eth_utils import keccak
 
 # Relayer imports
 from py_builder_relayer_client.client import RelayClient
-from py_builder_relayer_client.models import RelayerTxType, OperationType, SafeTransaction
+from py_builder_relayer_client.client import RelayerTxType
+from py_builder_relayer_client.models import OperationType, SafeTransaction
+
 from py_builder_signing_sdk.config import BuilderConfig, BuilderApiKeyCreds
 
 from app.core.logging import logger
