@@ -157,6 +157,9 @@ class Settings(BaseSettings):
     WEATHER_ENTRY_THRESHOLD_HIGH: float = 0.90
     WEATHER_ENTRY_THRESHOLD_LOW: float = 0.10
     WEATHER_API_KEY: str | None = None
+    ECMWF_API_URL: str = "https://api.ecmwf.int/v1"
+    ECMWF_API_KEY: Optional[str] = None
+    ECMWF_API_EMAIL: Optional[str] = None
     ARB_DEDUP_WINDOW: int = 3600 # Unified name
 
     # Portfolio Protection

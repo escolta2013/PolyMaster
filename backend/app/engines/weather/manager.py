@@ -103,7 +103,34 @@ class WeatherManager:
         if not coords:
             return
 
-        # 2. Extract Threshold and Metric
+        # 2. Check if it's a Rain Market or Temperature Market
+        is_rain_market = any(kw in question.lower() for kw in ["rain", "precipitation", "snow"])
+        
+        if is_rain_market:
+            # RAIN PROBABILITY LOGIC
+            probs = await self._get_rain_prob_consensus(coords)
+            if not probs: return
+            
+            avg_prob = sum(probs) / len(probs)
+            logger.info(f"Weather Analysis (RAIN): {city} | Forecast Prob: {avg_prob}%")
+            
+            # Strategy: Edge relative to market price
+            intel = await self.client.get_market_intelligence(market_id)
+            if not intel: return
+            
+            price_yes = intel.get("best_ask", 0.5)
+            # Thresholds: Confidence > 85% for YES, < 15% for NO
+            if avg_prob > 85 and price_yes < 0.70:
+                yes_token = market.get("clobTokenIds", [None])[0]
+                if yes_token:
+                    await self._execute_trade(market, yes_token, avg_prob, 0, f"High rain certainty ({avg_prob}%) vs Price ({price_yes})", price_yes, intel.get("best_bid", 0), intel.get("spread", 0))
+            elif avg_prob < 15 and price_yes > 0.30:
+                no_token = market.get("clobTokenIds", [None, None])[1]
+                if no_token:
+                    await self._execute_trade(market, no_token, 100-avg_prob, 0, f"Low rain probability ({avg_prob}%) vs Price ({price_yes})", 1-intel.get("best_bid", 0.5), 0, 0)
+            return
+
+        # 3. TEMPERATURE LOGIC (Previous logic)
         threshold = self._extract_threshold(question)
         if threshold is None: return
         
@@ -231,7 +258,8 @@ class WeatherManager:
         async with httpx.AsyncClient() as http:
             tasks = [
                 self._fetch_openmeteo(lat, lon, unit, http),
-                self._fetch_weatherapi(lat, lon, unit, http)
+                self._fetch_weatherapi(lat, lon, unit, http),
+                self._fetch_ecmwf_professional(lat, lon, unit, http)
             ]
             if is_us:
                 tasks.append(self._fetch_noaa(lat, lon, unit, http))
@@ -239,6 +267,84 @@ class WeatherManager:
             results = await asyncio.gather(*tasks, return_exceptions=True)
             valid_temps = [r for r in results if isinstance(r, (int, float))]
             return valid_temps
+
+    async def _get_rain_prob_consensus(self, coords: Dict[str, Any]) -> Optional[List[float]]:
+        lat, lon = coords["lat"], coords["lon"]
+        async with httpx.AsyncClient() as http:
+            tasks = [
+                self._fetch_ecmwf_rain_prob(lat, lon, http),
+                self._fetch_openmeteo_rain_prob(lat, lon, http)
+            ]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            valid_probs = [r for r in results if isinstance(r, (int, float))]
+            return valid_probs
+
+    async def _fetch_ecmwf_rain_prob(self, lat: float, lon: float, http: httpx.AsyncClient) -> Optional[float]:
+        try:
+            url = "https://api.open-meteo.com/v1/ecmwf"
+            params = {
+                "latitude": lat,
+                "longitude": lon,
+                "hourly": "precipitation_probability",
+                "forecast_days": 1,
+                "models": "ecmwf_ifs04"
+            }
+            resp = await http.get(url, params=params, timeout=12)
+            if resp.status_code == 200:
+                data = resp.json()
+                probs = data.get("hourly", {}).get("precipitation_probability", [])
+                if probs:
+                    # Return max probability in the next few hours
+                    return float(max(probs[:6])) 
+        except Exception as e:
+            logger.warning(f"ECMWF Rain Prob Error: {e}")
+        return None
+
+    async def _fetch_openmeteo_rain_prob(self, lat: float, lon: float, http: httpx.AsyncClient) -> Optional[float]:
+        try:
+            url = "https://api.open-meteo.com/v1/forecast"
+            params = {
+                "latitude": lat,
+                "longitude": lon,
+                "hourly": "precipitation_probability",
+                "forecast_days": 1
+            }
+            resp = await http.get(url, params=params, timeout=10)
+            if resp.status_code == 200:
+                data = resp.json()
+                probs = data.get("hourly", {}).get("precipitation_probability", [])
+                if probs:
+                    return float(max(probs[:6]))
+        except Exception as e:
+            logger.error(f"Open-Meteo Rain Error: {e}")
+        return None
+
+    async def _fetch_ecmwf_professional(self, lat: float, lon: float, unit: str, http: httpx.AsyncClient) -> Optional[float]:
+        """
+        Fetches high-resolution forecast data from ECMWF.
+        Using Open-Meteo's ECMWF IFS (0.25°) interface which is the fastest way 
+        to get the data the user's text described.
+        """
+        try:
+            # We use the ECMWF IFS model (0.1° or 0.25° resolution)
+            url = "https://api.open-meteo.com/v1/ecmwf"
+            params = {
+                "latitude": lat,
+                "longitude": lon,
+                "current": "temperature_2m",
+                "temperature_unit": unit,
+                "models": "ecmwf_ifs04"
+            }
+            resp = await http.get(url, params=params, timeout=12)
+            if resp.status_code == 200:
+                data = resp.json()
+                temp = data.get("current", {}).get("temperature_2m")
+                if temp is not None:
+                    logger.debug(f"ECMWF Professional Data: {temp}{unit[0].upper()} at {lat},{lon}")
+                    return temp
+        except Exception as e:
+            logger.warning(f"ECMWF Professional API Error: {e}")
+        return None
 
     async def _fetch_openmeteo(self, lat: float, lon: float, unit: str, http: httpx.AsyncClient) -> Optional[float]:
         try:

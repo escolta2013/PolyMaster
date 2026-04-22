@@ -22,3 +22,4 @@ loguru
 structlog
 cryptography
 aiogram
+ecmwf-api-client==1.6.3
