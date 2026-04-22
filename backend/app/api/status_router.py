@@ -178,12 +178,29 @@ def get_status():
             try:
                 wl_resp = (
                     sb.table("autonomous_logs")
-                    .select("correct")
+                    .select("id, market_id, decision, correct, detected_at")
                     .in_("correct", ["WIN", "LOSS"])
                     .in_("decision", ["EXECUTED", "WOULD_EXECUTE", "EXECUTED_LIVE", "EXECUTED_SIM"])
                     .execute()
                 )
-                for row in (wl_resp.data or []):
+                decisions = wl_resp.data or []
+                # Deduplicate by market_id, keeping the one with best status (WIN > LOSS > PENDING > EXEC)
+                unique_decisions = {}
+                status_priority = {"WIN": 4, "LOSS": 4, "PENDING": 3, "EXECUTED_LIVE": 2, "EXECUTED_SIM": 2, "EXECUTED": 2}
+                
+                for d in decisions:
+                    mid = d.get("market_id")
+                    if not mid: continue
+                    
+                    current_status = d.get("correct") if d.get("correct") != "PENDING" else d.get("decision")
+                    if mid not in unique_decisions:
+                        unique_decisions[mid] = d
+                    else:
+                        existing_status = unique_decisions[mid].get("correct") if unique_decisions[mid].get("correct") != "PENDING" else unique_decisions[mid].get("decision")
+                        if status_priority.get(current_status, 0) > status_priority.get(existing_status, 0):
+                            unique_decisions[mid] = d
+                
+                for row in unique_decisions.values():
                     if row["correct"] == "WIN":
                         wins_total += 1
                     elif row["correct"] == "LOSS":
@@ -217,6 +234,16 @@ def get_status():
     
     try:
         if sb:
+            # LLM Calls today from logs: only count those that have a council_score (actual IA calls)
+            today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            llm_calls = (
+                sb.table("autonomous_logs")
+                .select("id", count="exact")
+                .gte("detected_at", today_start.isoformat())
+                .not_.is_("council_score", "null")
+                .execute()
+            ).count or 0
+            
             # Stats for the last 24h
             stats_resp = (
                 sb.table("autonomous_logs")
