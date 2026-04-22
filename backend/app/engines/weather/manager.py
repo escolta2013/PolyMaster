@@ -197,9 +197,9 @@ class WeatherManager:
                 logger.error(f"Weather Exploit: DB dedup check failed: {e}")
 
             # Fetch orderbook data for logging even if we already have midpoint
-            best_ask = intel.get("ask", 0.0)
-            best_bid = intel.get("bid", 0.0)
-            spread = abs(best_ask - best_bid) if best_ask and best_bid else 0.0
+            best_ask = intel.get("best_ask", 0.0)
+            best_bid = intel.get("best_bid", 0.0)
+            spread = intel.get("spread", 0.0)
 
             logger.success(f"Weather Exploit FOUND EDGE: {city} | {reason}")
             self.executed_markets.add(market_id)
@@ -446,8 +446,12 @@ class WeatherManager:
             estimated_price = price
             shares = size_usdc / estimated_price if estimated_price > 0 else 0
             
+            # Use autonomous user ID from settings (must be valid UUID)
+            # If not set, use None to avoid invalid UUID error
+            user_id = settings.AUTONOMOUS_USER_ID if settings.AUTONOMOUS_USER_ID else None
+            
             trade_record = {
-                "user_id": "WEATHER_ENGINE",
+                "user_id": user_id,
                 "source_wallet": "Consensus",
                 "token_id": token_id,
                 "market_id": market.get("id"),
