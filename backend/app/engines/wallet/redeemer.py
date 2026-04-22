@@ -152,7 +152,7 @@ class AutoRedeemer:
                 elif neg_risk is False:
                     args = eth_encode(
                         ["address", "bytes32", "bytes32", "uint256[]"],
-                        [USDC_ADDRESS, b"\\x00" * 32, condition_bytes, [1, 2]],
+                        [USDC_ADDRESS, b"\x00" * 32, condition_bytes, [1, 2]],
                     )
                     txn = SafeTransaction(
                         to=CTF_ADDRESS,
