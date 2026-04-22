@@ -148,15 +148,35 @@ def get_status():
                     t["potential_profit"] = round(shares - invested, 4) if invested > 0 else 0
                     t["potential_roi_pct"] = round((t["potential_profit"] / invested) * 100, 1) if invested > 0 else 0
 
-                except Exception as enrich_err:
-                    logger.warning(f"[StatusRouter] Enrich error for {t.get('market_id')}: {enrich_err}")
-                    t["invested_usdc"]   = 0
-                    t["shares_owned"]    = 0
-                    t["avg_entry_price"] = 0
-                    t["potential_payout"] = 0
-                    t["potential_profit"] = 0
-                    t["potential_roi_pct"] = 0
                     t["shares_source"]   = "error"
+
+                # New: Extract City and Market Type for professional display
+                q = t.get("question", "").lower()
+                r = t.get("reasoning", "").lower()
+                
+                # Extract City
+                t["display_city"] = "General"
+                for city_name in ["Philadelphia", "Chicago", "New York", "London", "Paris", "Madrid", "Tokyo", "Seoul", "Ankara", "Istanbul"]:
+                    if city_name.lower() in q or city_name.lower() in r:
+                        t["display_city"] = city_name
+                        break
+                
+                # Extract Market Type (HIGH/LOW or YES/NO)
+                t["display_type"] = "N/A"
+                if "high" in q or "above" in q: t["display_type"] = "HIGH"
+                elif "low" in q or "below" in q: t["display_type"] = "LOW"
+                elif "yes" in q: t["display_type"] = "YES"
+                elif "no" in q: t["display_type"] = "NO"
+                
+                # Realized P&L for resolved trades
+                if t.get("correct") in ["WIN", "LOSS"]:
+                    try:
+                        trade_data = sb.table("copy_trades").select("usdc, outcome_value").eq("market_id", t["market_id"]).execute()
+                        if trade_data.data:
+                            row = trade_data.data[0]
+                            t["realized_pnl"] = round(float(row.get("outcome_value", 0)) - float(row.get("usdc", 0)), 2)
+                    except:
+                        t["realized_pnl"] = 0
 
 
             trades_today = len(raw_trades)
@@ -208,20 +228,30 @@ def get_status():
             except Exception:
                 pass
 
-            # Simulated P&L from copy_trades
+            # Advanced Metrics from copy_trades
+            total_traded = 0
+            trade_count = 0
             try:
-                pnl_resp = (
+                metrics_resp = (
                     sb.table("copy_trades")
                     .select("usdc, outcome_value")
                     .execute()
                 )
-                for row in (pnl_resp.data or []):
+                rows = metrics_resp.data or []
+                trade_count = len(rows)
+                for row in rows:
+                    usdc = float(row.get("usdc", 0))
                     ov = row.get("outcome_value")
-                    usdc = row.get("usdc", 0)
+                    total_traded += usdc
                     if ov is not None:
-                        pnl_usdc += float(ov) - float(usdc)
-            except Exception:
-                pass
+                        pnl_usdc += float(ov) - usdc
+                
+                avg_trade = total_traded / trade_count if trade_count > 0 else 0
+                avg_pnl_per_trade = pnl_usdc / trade_count if trade_count > 0 else 0
+            except Exception as e:
+                logger.warning(f"[StatusRouter] Metrics error: {e}")
+                avg_trade = 0
+                avg_pnl_per_trade = 0
 
     except Exception as e:
         logger.warning(f"[StatusRouter] Supabase error: {e}")
@@ -283,6 +313,9 @@ def get_status():
         "wins_total": wins_total,
         "losses_total": losses_total,
         "pnl_usdc": round(pnl_usdc, 2),
+        "total_traded": round(total_traded, 2),
+        "avg_trade_size": round(avg_trade, 2),
+        "avg_pnl_trade": round(avg_pnl_per_trade, 2),
         # Council (Unified from DB)
         "council_calls_today": council_calls_today,
         "council_budget": settings.COUNCIL_MAX_DAILY_CALLS if hasattr(settings, "COUNCIL_MAX_DAILY_CALLS") else 300,

@@ -86,8 +86,24 @@
   
   .clock { font-family: 'Share Tech Mono', monospace; font-size: 16px; color: var(--text-secondary); }
 
-  /* --- GRID --- */
-  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  /* --- SUMMARY GRID --- */
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 15px;
+    margin-bottom: 5px;
+  }
+  .summary-card {
+    background: var(--bg-panel);
+    border: 1px solid var(--border-light);
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+    backdrop-filter: blur(10px);
+  }
+  .summary-label { font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+  .summary-val { font-family: 'Share Tech Mono', monospace; font-size: 22px; font-weight: 700; }
+  .summary-sub { font-size: 10px; color: var(--text-secondary); margin-top: 4px; }
 
   .panel {
     background: var(--bg-panel);
@@ -290,72 +306,77 @@
     <div class="clock" id="clock">--:--:-- ET</div>
   </div>
 
-  <!-- METRICS GRID -->
-  <div class="grid">
-    <!-- PANEL 1: CORE PORTFOLIO -->
+  <!-- SUMMARY ROW -->
+  <div class="summary-grid">
+    <div class="summary-card">
+      <div class="summary-label">Winning Trades</div>
+      <div class="summary-val" id="win-loss-summary" style="color:var(--accent-cyan)">0 / 0</div>
+      <div class="summary-sub" id="win-rate-summary">0% win rate</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-label">Total Profit</div>
+      <div class="summary-val" id="pnl-summary" style="color:var(--accent-green)">$0.00</div>
+      <div class="summary-sub">All-time realized</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-label">Total Traded</div>
+      <div class="summary-val" id="total-traded-summary" style="color:white">$0.00</div>
+      <div class="summary-sub">Volume</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-label">Average Trade</div>
+      <div class="summary-val" id="avg-trade-summary" style="color:var(--accent-cyan)">$0.00</div>
+      <div class="summary-sub">Per execution</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-label">Avg P&L / Trade</div>
+      <div class="summary-val" id="avg-pnl-summary" style="color:var(--accent-green)">$0.00</div>
+      <div class="summary-sub">Net edge</div>
+    </div>
+  </div>
+
+  <div class="grid" style="grid-template-columns: 1fr 380px;">
+    <!-- LEFT: DETAILED TRADES TABLE -->
     <div class="panel">
-      <div class="panel-header">
-        <div class="panel-title">PORTFOLIO & RISK</div>
-      </div>
-      
-      <div class="metric-box">
-        <div class="metric-label">USDC Balance</div>
-        <div class="metric-val val-green" id="wallet-balance">$0.00</div>
-      </div>
-      
-      <div class="metric-box">
-        <div class="metric-label">Simulated P&L</div>
-        <div class="metric-val" id="pnl">$0.00</div>
-      </div>
-      
-      <div style="height:20px"></div>
-      
-      <div class="kv-row">
-        <span class="kv-key">Budget Used Today</span>
-        <span class="kv-val"><span id="budget-used">$0</span> / <span id="budget-limit">$0</span></span>
-      </div>
-      <div class="bar-container"><div class="bar-fill fill-green" id="budget-bar" style="width:0%"></div></div>
-      
-      <div style="height:20px"></div>
-      <div class="kv-row"><span class="kv-key">Win Rate (All Time)</span> <span class="kv-val" id="accuracy">0%</span></div>
-      <div class="kv-row"><span class="kv-key">Trades (Win/Loss)</span> <span class="kv-val" id="win-loss">0 / 0</span></div>
+        <div class="panel-header">
+          <div class="panel-title">Market P&L Data</div>
+        </div>
+        <table style="width:100%; border-collapse: collapse; font-size: 12px; text-align: left;">
+            <thead>
+                <tr style="color: var(--text-secondary); border-bottom: 1px solid var(--border-light); text-transform: uppercase; font-size: 10px;">
+                    <th style="padding: 10px 5px;">Result Date</th>
+                    <th style="padding: 10px 5px;">City</th>
+                    <th style="padding: 10px 5px;">Market</th>
+                    <th style="padding: 10px 5px;">Contract</th>
+                    <th style="padding: 10px 5px; text-align: right;">Total Traded</th>
+                    <th style="padding: 10px 5px; text-align: right;">Realized P&L</th>
+                </tr>
+            </thead>
+            <tbody id="trades-table-body">
+                <!-- Rows injected by JS -->
+            </tbody>
+        </table>
     </div>
 
-    <!-- PANEL 2: RECENT TRADES -->
-    <div class="panel">
-      <div class="panel-header">
-        <div class="panel-title">LATEST DECISIONS</div>
-        <div style="font-size:11px;color:var(--text-secondary)" id="trades-today">0 Trades Today</div>
-      </div>
-      
-      <div class="trade-list" id="trades-list">
-        <!-- Rendered by JS -->
-      </div>
-    </div>
+    <!-- RIGHT: AI COUNCIL & BUDGET -->
+    <div style="display: flex; flex-direction: column; gap: 20px;">
+        <div class="panel" style="padding: 20px;">
+            <div class="panel-header" style="margin-bottom: 10px;">
+              <div class="panel-title">COUNCIL SWARM</div>
+            </div>
+            <div class="kv-row"><span class="kv-key">Hit Rate</span> <span class="kv-val val-green" id="cache-hits">0%</span></div>
+            <div class="kv-row"><span class="kv-key">AI Calls</span> <span class="kv-val"><span id="council-calls">0</span> / 300</span></div>
+            <div class="bar-container" style="margin-bottom:10px"><div class="bar-fill fill-green" id="council-bar" style="width:0%"></div></div>
+        </div>
 
-    <!-- PANEL 3: AI COUNCIL -->
-    <div class="panel">
-      <div class="panel-header">
-        <div class="panel-title">COUNCIL SWARM STATS</div>
-      </div>
-      
-      <div class="metric-box">
-        <div class="metric-label">Council Hit Rate (Cache)</div>
-        <div class="metric-val val-green" style="color:var(--accent-cyan)" id="cache-hits">0%</div>
-      </div>
-      
-      <div style="height:20px"></div>
-      
-      <div class="kv-row">
-        <span class="kv-key">LLM Calls Today</span>
-        <span class="kv-val"><span id="council-calls">0</span> / <span id="council-budget">300</span></span>
-      </div>
-      <div class="bar-container"><div class="bar-fill fill-green" id="council-bar" style="width:0%"></div></div>
-      
-      <div style="height:20px"></div>
-      <div class="kv-row"><span class="kv-key">Markets Analyzed</span> <span class="kv-val" id="cached-markets">0</span></div>
-      <div class="kv-row"><span class="kv-key">Tokens Saved</span> <span class="kv-val" id="tokens-saved">0</span></div>
-      <div class="kv-row"><span class="kv-key">Confidence Threshold</span> <span class="kv-val" id="threshold">0.0</span></div>
+        <div class="panel" style="padding: 20px;">
+            <div class="panel-header" style="margin-bottom: 10px;">
+                <div class="panel-title">WALLET & RISK</div>
+            </div>
+            <div class="kv-row"><span class="kv-key">Balance</span> <span class="kv-val val-green" id="wallet-balance">$0.00</span></div>
+            <div class="kv-row"><span class="kv-key">Daily Limit</span> <span class="kv-val"><span id="budget-used">$0</span> / <span id="budget-limit">$0</span></span></div>
+            <div class="bar-container"><div class="bar-fill fill-green" id="budget-bar" style="width:0%"></div></div>
+        </div>
     </div>
   </div>
 
@@ -417,40 +438,39 @@ let currentTrades = [];
 
 function renderTrades(trades) {
   currentTrades = trades;
-  const tl = document.getElementById('trades-list');
+  const tbody = document.getElementById('trades-table-body');
   if (!trades || trades.length === 0) {
-    tl.innerHTML = '<div style="color:var(--text-secondary);font-size:13px;text-align:center;padding:20px">No deployments yet</div>';
+    tbody.innerHTML = '<tr><td colspan="6" style="color:var(--text-secondary);font-size:13px;text-align:center;padding:20px">No trades detected yet</td></tr>';
     return;
   }
   
-  const html = trades.slice(0, 10).map((t, idx) => {
-    const q = (t.market_question || t.market_id || '?').substring(0, 50) + '...';
-    const score = t.council_score ? t.council_score.toFixed(2) : 'N/A';
+  const html = trades.slice(0, 15).map((t, idx) => {
+    const date = new Date(t.detected_at).toLocaleDateString();
+    const city = t.display_city || "General";
+    const type = t.display_type || "N/A";
+    const typeColor = type === 'HIGH' ? 'var(--accent-red)' : type === 'LOW' ? 'var(--accent-cyan)' : 'white';
     
-    let icon = 'PEND', iClass = 'icon-warn';
-    let c = (t.correct || '').toUpperCase();
-    let d = (t.decision || '').toUpperCase();
+    const pnl = t.realized_pnl || 0;
+    const pnlColor = pnl > 0 ? 'var(--accent-green)' : pnl < 0 ? 'var(--accent-red)' : 'var(--text-secondary)';
     
-    if (c === 'WIN') { icon = 'WIN'; iClass = 'icon-win'; }
-    else if (c === 'LOSS') { icon = 'LOSS'; iClass = 'icon-loss'; }
-    else if (d === 'EXECUTED' || d === 'WOULD_EXECUTE' || d === 'EXECUTED_LIVE') { icon = 'EXEC'; iClass = 'icon-exec'; }
-    else if (d === 'REJECTED' || d === 'SKIPPED') { icon = 'REJ'; iClass = 'icon-rej'; }
+    const invested = parseFloat(t.invested_usdc || t.size_usdc || 0);
+    const contract = (t.market_question || t.market_id || '?').substring(0, 30) + '...';
 
     return `
-      <div class="trade-item cursor-pointer" onclick="showTradeDetails(${idx})">
-        <div class="trade-icon ${iClass}">${icon}</div>
-        <div class="trade-info">
-          <div class="trade-market" title="${t.market_question}">${q}</div>
-          <div class="trade-meta">
-            <span>Score: <span class="trade-score">${score}</span></span>
-            <span>${new Date(t.detected_at).toLocaleTimeString()}</span>
-          </div>
-        </div>
-      </div>
+      <tr class="cursor-pointer" onclick="showTradeDetails(${idx})" style="border-bottom: 1px solid rgba(255,255,255,0.03);">
+        <td style="padding: 12px 5px; color: var(--text-secondary);">${date}</td>
+        <td style="padding: 12px 5px; font-weight: 500;">${city}</td>
+        <td style="padding: 12px 5px; color: ${typeColor}; font-weight: 700; font-size: 10px;">${type}</td>
+        <td style="padding: 12px 5px; color: var(--text-secondary); font-size: 10px;">${contract}</td>
+        <td style="padding: 12px 5px; text-align: right; font-family: 'Share Tech Mono';">$${invested.toFixed(2)}</td>
+        <td style="padding: 12px 5px; text-align: right; font-family: 'Share Tech Mono'; color: ${pnlColor}; font-weight: bold;">
+            ${pnl !== 0 ? (pnl > 0 ? '+' : '') + '$' + pnl.toFixed(2) : '$0.00'}
+        </td>
+      </tr>
     `;
   }).join('');
   
-  if (tl.innerHTML !== html) tl.innerHTML = html;
+  if (tbody.innerHTML !== html) tbody.innerHTML = html;
 }
 
 function closeModal() { document.getElementById('trade-modal').style.display = 'none'; }
@@ -723,12 +743,16 @@ async function fetchStatus() {
     const h = Math.floor(secs/3600), m = Math.floor((secs%3600)/60), s = secs%60;
     updateValue('uptime', `${h}h ${m}m ${s}s`);
 
-    // Portfolio
+    // Portfolio & Professional Stats
     const bal = d.wallet_balance_usdc ?? 0;
     updateValue('wallet-balance', `$${bal.toFixed(2)}`, 'metric-val val-green');
     
     const pnl = d.pnl_usdc ?? 0;
-    updateValue('pnl', (pnl >= 0 ? '+' : '') + `$${pnl.toFixed(2)}`, 'metric-val ' + (pnl>=0?'val-green':'val-red'));
+    updateValue('pnl-summary', (pnl >= 0 ? '+' : '') + `$${pnl.toFixed(2)}`, 'summary-val ' + (pnl>=0?'val-green':'val-red'));
+    
+    updateValue('total-traded-summary', `$${(d.total_traded || 0).toFixed(2)}`);
+    updateValue('avg-trade-summary', `$${(d.avg_trade_size || 0).toFixed(2)}`);
+    updateValue('avg-pnl-summary', (d.avg_pnl_trade >= 0 ? '+' : '') + `$${(d.avg_pnl_trade || 0).toFixed(2)}`, 'summary-val ' + (d.avg_pnl_trade >= 0 ? 'val-green' : 'val-red'));
 
     // Budgets
     const spent = d.budget_spent_today ?? 0;
@@ -745,7 +769,6 @@ async function fetchStatus() {
     const calls = d.council_calls_today ?? 0;
     const cLim = d.council_budget ?? 300;
     updateValue('council-calls', Math.floor(calls));
-    updateValue('council-budget', Math.floor(cLim));
     
     const cPct = (calls / cLim) * 100;
     const cbar = document.getElementById('council-bar');
@@ -754,9 +777,9 @@ async function fetchStatus() {
 
     // Misc metrics
     const w = d.wins_total ?? 0; const l = d.losses_total ?? 0;
-    updateValue('win-loss', `${w} / ${l}`);
-    updateValue('accuracy', (w+l > 0) ? `${((w/(w+l))*100).toFixed(1)}%` : '0%');
-    updateValue('trades-today', `${d.trades_today ?? 0} Trades Today`);
+    const winRate = (w+l > 0) ? `${((w/(w+l))*100).toFixed(1)}%` : '0%';
+    updateValue('win-loss-summary', `${w} / ${l}`);
+    updateValue('win-rate-summary', `${winRate} win rate`);
     
     updateValue('cache-hits', d.cache_hit_rate ?? '0%');
     updateValue('cached-markets', d.cached_markets ?? 0);
