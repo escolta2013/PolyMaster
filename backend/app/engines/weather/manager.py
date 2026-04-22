@@ -531,6 +531,9 @@ class WeatherManager:
                     "threshold": threshold,
                     "logic": reason
                 },
+                "city": next((c for c in ["Philadelphia", "Chicago", "New York", "London", "Paris", "Madrid", "Tokyo", "Seoul", "Ankara", "Istanbul"] if c.lower() in market.get("question", "").lower()), "General"),
+                "market_type": "HIGH" if any(x in market.get("question", "").lower() for x in ["high", "above"]) else ("LOW" if any(x in market.get("question", "").lower() for x in ["low", "below"]) else ("RAIN" if any(x in market.get("question", "").lower() for x in ["rain", "precipitation"]) else "N/A")),
+                "weather_data": {"actual": actual, "threshold": threshold, "engine": "WeatherExploit-v1"},
                 "size_usdc": size_usdc,
                 "best_ask": best_ask,
                 "best_bid": best_bid,

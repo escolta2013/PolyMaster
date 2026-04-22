@@ -150,31 +150,39 @@ def get_status():
 
                     t["shares_source"]   = "error"
 
-                # New: Extract City and Market Type for professional display
-                q = t.get("question", "").lower()
-                r = t.get("reasoning", "").lower()
-                
-                # Extract City
-                t["display_city"] = "General"
-                for city_name in ["Philadelphia", "Chicago", "New York", "London", "Paris", "Madrid", "Tokyo", "Seoul", "Ankara", "Istanbul"]:
-                    if city_name.lower() in q or city_name.lower() in r:
-                        t["display_city"] = city_name
-                        break
-                
-                # Extract Market Type (HIGH/LOW or YES/NO)
-                t["display_type"] = "N/A"
-                if "high" in q or "above" in q: t["display_type"] = "HIGH"
-                elif "low" in q or "below" in q: t["display_type"] = "LOW"
-                elif "yes" in q: t["display_type"] = "YES"
-                elif "no" in q: t["display_type"] = "NO"
+                # Use structured data if available, fallback to extraction for old records
+                t["display_city"] = t.get("city")
+                if not t["display_city"] or t["display_city"] == "General":
+                    q = t.get("question", "").lower()
+                    r = t.get("reasoning", "").lower()
+                    for city_name in ["Philadelphia", "Chicago", "New York", "London", "Paris", "Madrid", "Tokyo", "Seoul", "Ankara", "Istanbul"]:
+                        if city_name.lower() in q or city_name.lower() in r:
+                            t["display_city"] = city_name
+                            break
+                    if not t["display_city"]: t["display_city"] = "General"
+
+                t["display_type"] = t.get("market_type")
+                if not t["display_type"] or t["display_type"] == "N/A":
+                    q = t.get("question", "").lower()
+                    if "high" in q or "above" in q: t["display_type"] = "HIGH"
+                    elif "low" in q or "below" in q: t["display_type"] = "LOW"
+                    elif "rain" in q: t["display_type"] = "RAIN"
+                    else: t["display_type"] = "N/A"
                 
                 # Realized P&L for resolved trades
-                if t.get("correct") in ["WIN", "LOSS"]:
+                if t.get("realized_pnl") is not None:
+                    # Column exists and has data
+                    pass
+                elif t.get("correct") in ["WIN", "LOSS"]:
                     try:
-                        trade_data = sb.table("copy_trades").select("usdc, outcome_value").eq("market_id", t["market_id"]).execute()
+                        trade_data = sb.table("copy_trades").select("usdc, outcome_value, realized_pnl").eq("market_id", t["market_id"]).execute()
                         if trade_data.data:
                             row = trade_data.data[0]
-                            t["realized_pnl"] = round(float(row.get("outcome_value", 0)) - float(row.get("usdc", 0)), 2)
+                            # Use pre-calculated P&L if available
+                            if row.get("realized_pnl"):
+                                t["realized_pnl"] = float(row["realized_pnl"])
+                            else:
+                                t["realized_pnl"] = round(float(row.get("outcome_value", 0)) - float(row.get("usdc", 0)), 2)
                     except:
                         t["realized_pnl"] = 0
 
