@@ -148,6 +148,8 @@ def get_status():
                     t["potential_profit"] = round(shares - invested, 4) if invested > 0 else 0
                     t["potential_roi_pct"] = round((t["potential_profit"] / invested) * 100, 1) if invested > 0 else 0
 
+                except Exception as e:
+                    logger.error(f"Error enriching trade {t.get('market_id')}: {e}")
                     t["shares_source"]   = "error"
 
                 # Use structured data if available, fallback to extraction for old records
