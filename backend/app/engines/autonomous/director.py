@@ -97,13 +97,16 @@ class DirectorAgent:
             "astral", "mindfreak", "bounty hunters esports",
         ]
         _nba_kw = [
-            "nba", " vs ", " vs. ", "76ers", "sixers", "celtics", "lakers",
-            "warriors", "knicks", "nets", "bucks", "heat", "nuggets", "suns",
+            # NBA teams only — removed " vs " to allow soccer/UFC/MMA/baseball markets
+            "nba", "76ers", "sixers", "celtics", "lakers",
+            "warriors", "knicks", "nets", "bucks", "nuggets", "suns",
             "clippers", "grizzlies", "thunder", "mavs", "mavericks", "spurs",
             "rockets", "pistons", "pacers", "hawks", "hornets", "wizards",
-            "magic", "raptors", "cavaliers", "cavs", "timberwolves", "wolves",
+            "raptors", "cavaliers", "cavs", "timberwolves", "wolves",
             "jazz", "pelicans", "kings", "blazers", "trail blazers", "okc",
-            "bulls", "basketball", "points scored", "total points",
+            "basketball", "points scored", "total points",
+            # Also exclude: MLB day-of games with runs (unpredictable)
+            "runs scored", "home runs",
         ]
         _tennis_kw = [
             "tennis", " atp ", "wta ", "grand slam", "wimbledon", "roland garros",
@@ -120,7 +123,7 @@ class DirectorAgent:
             "spread", "handicap", "over/under", "o/u",
             "ncaa", "cornhuskers", "boilermakers", "purdue", "nebraska",
             # Price target verbs (2026-03-30) — catch "reach $", "hit $", etc.
-            "reach $", "hit $", "exceed $", "surpass $", "cross $", "above $", "below $",
+            "reach $", "hit $", "exceed $", "surpass $", "cross $",
             "reach usd", "hit usd", "at least $", "at most $",
             # Crypto market cap / FDV markets (2026-03-30)
             "market cap", " fdv", ">$", "one day after launch", "marketcap",
@@ -154,11 +157,9 @@ class DirectorAgent:
             _excluded_reason = "unpredictable_variancy_excluded"
         elif _is_exact_temp:
             _excluded_reason = "exact_temperature_excluded"
-        elif ("win on 2026-" in q_lower
-              and "both teams" not in q_lower
-              and "o/u" not in q_lower
-              and "spread" not in q_lower):
-            _excluded_reason = "football_direct_winner"
+        # NOTE: football_direct_winner exclusion REMOVED (2026-04-21).
+        # Manual §7.6: 71.4% accuracy (n=7) — needs more data, not exclusion.
+        # Soccer/football markets are now allowed through for Council analysis.
         elif any(k in q_lower for k in _price_kw):
             _excluded_reason = "specific_price_target"
 
@@ -671,14 +672,15 @@ class DirectorAgent:
         ]
         is_esports = any(kw in q_lower for kw in esports_keywords)
 
-        # Group 2: NBA (EV=-0.162, n=234)
+        # Group 2: NBA (EV=-0.162, n=234) — " vs " removed to allow soccer/MMA/baseball
         nba_keywords = [
-            "nba", " vs ", " vs. ", "76ers", "sixers", "celtics", "lakers",
-            "warriors", "knicks", "nets", "bucks", "heat", "nuggets", "suns",
+            "nba", "76ers", "sixers", "celtics", "lakers",
+            "warriors", "knicks", "nets", "bucks", "nuggets", "suns",
             "clippers", "grizzlies", "thunder", "mavs", "mavericks", "spurs",
             "rockets", "pistons", "pacers", "hawks", "hornets", "wizards",
-            "magic", "raptors", "cavaliers", "cavs", "timberwolves", "wolves",
+            "raptors", "cavaliers", "cavs", "timberwolves", "wolves",
             "jazz", "pelicans", "kings", "blazers", "okc", "bulls", "basketball",
+            "runs scored", "home runs",
         ]
         is_nba = any(kw in q_lower for kw in nba_keywords)
 
@@ -701,15 +703,9 @@ class DirectorAgent:
         ]
         is_unpredictable = any(kw in q_lower for kw in unpredictable_keywords)
 
-        # Group 5: Direct football winner
-        is_football_direct_winner = (
-            "win on 2026-" in q_lower and
-            "both teams" not in q_lower and
-            "o/u" not in q_lower and
-            "spread" not in q_lower
-        )
+        # Group 5: Specific crypto/stock price targets (football direct winner REMOVED — §7.6 manual)
+        is_football_direct_winner = False  # Disabled 2026-04-21 — soccer has 71.4% acc (n=7, needs data)
 
-        # Group 6: Specific crypto/stock price targets
         is_specific_price_target = any(kw in q_lower for kw in [
             "close above $", "close below $", "close at $",
             "be above $", "be below $", "be between $",
@@ -727,8 +723,6 @@ class DirectorAgent:
             excluded_reason = "tennis_excluded_ev_negative"
         elif is_unpredictable:
             excluded_reason = "unpredictable_variancy_excluded"
-        elif is_football_direct_winner:
-            excluded_reason = "football_direct_winner_filter"
         elif is_specific_price_target:
             excluded_reason = "specific_price_target_filter"
 

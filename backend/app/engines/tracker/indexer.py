@@ -206,12 +206,14 @@ class PolymarketIndexer:
                     
                     # Layer 4: Exclude NBA, Tennis and unpredictable categories
                     _q_lower = q.lower()
-                    _nba_kw = ["nba", " vs ", " vs. ", "76ers", "celtics", "lakers",
-                        "warriors", "knicks", "nets", "bucks", "heat", "nuggets", "suns",
+                    # NOTE: " vs " removed — allows soccer/UFC/MMA/baseball head-to-heads through
+                    _nba_kw = ["nba", "76ers", "celtics", "lakers",
+                        "warriors", "knicks", "nets", "bucks", "nuggets", "suns",
                         "clippers", "grizzlies", "thunder", "mavs", "mavericks", "spurs",
                         "rockets", "pistons", "pacers", "hawks", "hornets", "wizards",
-                        "magic", "raptors", "cavaliers", "timberwolves", "pelicans",
-                        "kings", "blazers", "okc", "bulls", "basketball", "total points"]
+                        "raptors", "cavaliers", "timberwolves", "pelicans",
+                        "kings", "blazers", "okc", "bulls", "basketball", "total points",
+                        "runs scored", "home runs"]
                     _tennis_kw = ["tennis", " atp ", "wta ", "wimbledon", "roland garros",
                         "us open", "australian open", "djokovic", "alcaraz", "sinner"]
                     _excluded_kw = _nba_kw + _tennis_kw
