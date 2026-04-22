@@ -491,12 +491,37 @@ function showTradeDetails(idx) {
   let roi      = parseFloat(t.potential_roi_pct || 0);
 
   // Calcular métricas faltantes basadas en el precio y la inversión si hubo ejecución
-  const isExecuted = (t.decision === 'WOULD_EXECUTE' || t.decision === 'EXECUTED' || t.decision === 'EXECUTED_LIVE');
-  if (isExecuted && invested > 0 && ask > 0) {
-    if (shares === 0) shares = invested / ask;
-    if (payout === 0) payout = shares * 1.00;
-    if (profit === 0) profit = payout - invested;
-    if (roi === 0) roi = (profit / invested) * 100;
+  const isExecuted = (t.decision === 'WOULD_EXECUTE' || t.decision === 'EXECUTED' || t.decision === 'EXECUTED_LIVE' || t.decision === 'EXECUTED_SIM');
+  
+  // Weather Engine fallback: If it's a weather exploit, try to get price from reasoning
+  let weatherData = null;
+  if (t.reasoning && (t.reasoning.includes('Weather Exploit') || t.reasoning.includes('actual_temp'))) {
+    try {
+      const r = JSON.parse(t.reasoning);
+      weatherData = r;
+      if (ask === 0 && r.logic) {
+        const match = r.logic.match(/is (\d+\.?\d*)/);
+        if (match) {
+          const inferredPrice = parseFloat(match[1]);
+          if (inferredPrice > 0) {
+             // Inferred price from reasoning (usually the YES price)
+             // If we bet NO, the entry price is 1 - YES_price
+             const entryPrice = (t.outcome === 'NO') ? (1 - inferredPrice) : inferredPrice;
+             t.avg_entry_price = entryPrice;
+             // Update our local variables
+             if (shares === 0 && invested > 0) shares = invested / entryPrice;
+          }
+        }
+      }
+    } catch(e) {}
+  }
+
+  if (isExecuted && invested > 0) {
+    const finalAsk = ask || parseFloat(t.avg_entry_price || 0);
+    if (shares === 0 && finalAsk > 0) shares = invested / finalAsk;
+    if (payout === 0 && shares > 0) payout = shares * 1.00;
+    if (profit === 0 && payout > 0 && invested > 0) profit = payout - invested;
+    if (roi === 0 && profit !== 0 && invested > 0) roi = (profit / invested) * 100;
   }
 
   const status   = (t.correct || 'PENDING').toUpperCase();
@@ -578,6 +603,22 @@ function showTradeDetails(idx) {
 
 
     <div style="border-top:1px solid rgba(255,255,255,0.07);margin:10px 0 14px;"></div>
+
+    ${weatherData ? `
+    <div style="margin-bottom:10px;">
+      <div class="detail-label" style="margin-bottom:8px;">🌡️ Weather Intelligence (Consensus)</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;text-align:center;">
+        <div style="background:rgba(255,176,0,0.08);border:1px solid rgba(255,176,0,0.15);border-radius:8px;padding:8px;">
+          <div style="font-size:10px;color:var(--text-secondary);margin-bottom:4px">ACTUAL</div>
+          <div style="font-family:'Share Tech Mono',monospace;color:var(--accent-amber);font-size:14px">${weatherData.actual_temp || '—'}°</div>
+        </div>
+        <div style="background:rgba(0,229,255,0.08);border:1px solid rgba(0,229,255,0.15);border-radius:8px;padding:8px;">
+          <div style="font-size:10px;color:var(--text-secondary);margin-bottom:4px">THRESHOLD</div>
+          <div style="font-family:'Share Tech Mono',monospace;color:var(--accent-cyan);font-size:14px">${weatherData.threshold || '—'}°</div>
+        </div>
+      </div>
+    </div>
+    ` : ''}
 
     ${(ask > 0 || bid > 0) ? `
     <div style="margin-bottom:10px;">

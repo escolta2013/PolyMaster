@@ -196,9 +196,14 @@ class WeatherManager:
             except Exception as e:
                 logger.error(f"Weather Exploit: DB dedup check failed: {e}")
 
+            # Fetch orderbook data for logging even if we already have midpoint
+            best_ask = intel.get("ask", 0.0)
+            best_bid = intel.get("bid", 0.0)
+            spread = abs(best_ask - best_bid) if best_ask and best_bid else 0.0
+
             logger.success(f"Weather Exploit FOUND EDGE: {city} | {reason}")
             self.executed_markets.add(market_id)
-            await self._execute_trade(market, yes_token_id, actual_temp, threshold, reason)
+            await self._execute_trade(market, yes_token_id, actual_temp, threshold, reason, best_ask, best_bid, spread)
 
     def _extract_city(self, question: str) -> Optional[str]:
         for city in self.CITY_COORDS.keys():
@@ -294,7 +299,7 @@ class WeatherManager:
             logger.error(f"WeatherAPI Error: {e}")
         return None
 
-    async def _execute_trade(self, market: Dict, token_id: str, actual: float, threshold: float, reason: str):
+    async def _execute_trade(self, market: Dict, token_id: str, actual: float, threshold: float, reason: str, best_ask: float = 0.0, best_bid: float = 0.0, spread: float = 0.0):
         """Executes a trade based on the exploit."""
         from app.engines.ghost.order_manager import OrderManager
         from app.services.telegram_bot import telegram
@@ -361,16 +366,19 @@ class WeatherManager:
         
         if settings.COPY_SIMULATION:
             logger.success(f"Weather Exploit [SIM]: Would buy SHARES for {size_usdc} USDC on token {target_token}")
-            await self._log_to_supabase(market, actual, threshold, reason, decision="EXECUTED_SIM", token_id=target_token, size_usdc=size_usdc, outcome=exec_outcome)
+            await self._log_to_supabase(market, actual, threshold, reason, decision="EXECUTED_SIM", token_id=target_token, size_usdc=size_usdc, outcome=exec_outcome, best_ask=best_ask, best_bid=best_bid, spread=spread)
             # Log to copy_trades for dashboard stats
-            await self._log_copy_trade_record(market, target_token, exec_outcome, size_usdc, "SIM_EXEC")
+            await self._log_copy_trade_record(market, target_token, exec_outcome, size_usdc, "SIM_EXEC", price=best_ask if best_ask > 0 else 0.5)
         else:
             # Execution logic
             try:
+                # Use the provided best_ask or a buffer
+                exec_price = best_ask + 0.01 if best_ask > 0 else settings.WEATHER_PRICE_BUFFER
+                
                 res = self.order_mgr.create_and_post_order(
                     token_id=target_token,
-                    price=settings.WEATHER_PRICE_BUFFER, # Aggressive limit to take all lagging asks
-                    size=size_usdc / settings.WEATHER_PRICE_BUFFER,
+                    price=exec_price, 
+                    size=size_usdc / exec_price,
                     side="BUY"
                 )
                 if res.get("status") == "success":
@@ -381,7 +389,7 @@ class WeatherManager:
                         balance = wallet_manager.get_onchain_balance(settings.POLY_PROXY_ADDRESS) if settings.POLY_PROXY_ADDRESS else 0.0
                         await telegram.trade_executed(
                             market=f"[WEATHER] {market.get('question')}",
-                            outcome="YES",
+                            outcome=exec_outcome,
                             score=1.0,
                             size=size_usdc,
                             sim=False,
@@ -389,17 +397,17 @@ class WeatherManager:
                         )
                     except Exception as te:
                         logger.error(f"Weather Telegram notification failed: {te}")
-                    await self._log_to_supabase(market, actual, threshold, reason, decision="EXECUTED_LIVE", token_id=target_token, size_usdc=size_usdc, order_id=order_id, outcome=exec_outcome)
-                    await self._log_copy_trade_record(market, target_token, exec_outcome, size_usdc, order_id)
+                    await self._log_to_supabase(market, actual, threshold, reason, decision="EXECUTED_LIVE", token_id=target_token, size_usdc=size_usdc, order_id=order_id, outcome=exec_outcome, best_ask=best_ask, best_bid=best_bid, spread=spread)
+                    await self._log_copy_trade_record(market, target_token, exec_outcome, size_usdc, order_id, price=exec_price)
                 else:
                     error_msg = res.get("message", "Unknown error")
                     logger.error(f"Weather Exploit [LIVE]: Execution failed: {error_msg}")
-                    await self._log_to_supabase(market, actual, threshold, reason, decision="FAILED", token_id=target_token, size_usdc=size_usdc)
+                    await self._log_to_supabase(market, actual, threshold, reason, decision="FAILED", token_id=target_token, size_usdc=size_usdc, outcome=exec_outcome, best_ask=best_ask, best_bid=best_bid, spread=spread)
             except Exception as e:
                 logger.error(f"Weather Exploit [LIVE]: Execution exception: {e}")
-                await self._log_to_supabase(market, actual, threshold, reason, decision="ERROR", token_id=target_token, size_usdc=size_usdc, outcome=exec_outcome)
+                await self._log_to_supabase(market, actual, threshold, reason, decision="ERROR", token_id=target_token, size_usdc=size_usdc, outcome=exec_outcome, best_ask=best_ask, best_bid=best_bid, spread=spread)
 
-    async def _log_to_supabase(self, market: Dict, actual: float, threshold: float, reason: str, decision: str, token_id: str, size_usdc: float, outcome: str, order_id: str = None):
+    async def _log_to_supabase(self, market: Dict, actual: float, threshold: float, reason: str, decision: str, token_id: str, size_usdc: float, outcome: str, order_id: str = None, best_ask: float = 0.0, best_bid: float = 0.0, spread: float = 0.0):
         try:
             from supabase import create_client
             supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
@@ -418,24 +426,25 @@ class WeatherManager:
                     "logic": reason
                 },
                 "size_usdc": size_usdc,
+                "best_ask": best_ask,
+                "best_bid": best_bid,
+                "spread": spread,
                 "detected_at": datetime.now(timezone.utc).isoformat(),
                 "end_date_iso": market.get("end_date_iso")
             }).execute()
         except Exception as e:
             logger.error(f"Weather Exploit: Failed to update Supabase log: {e}")
 
-    async def _log_copy_trade_record(self, market: Dict, token_id: str, outcome: str, size_usdc: float, order_id: str):
+    async def _log_copy_trade_record(self, market: Dict, token_id: str, outcome: str, size_usdc: float, order_id: str, price: float = 0.90):
         """Helper to log weather trades to copy_trades table for dashboard syncing."""
         try:
             from supabase import create_client
             supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
             
             # Polymarket price at entry for weather engine is usually high (lagging)
-            # or low if we buy early. We don't have perfect price history here, 
-            # so we estimate it but the dashboard uses it for ROI.
-            # Best is to use a nominal price like 0.90 for successes.
-            estimated_price = 0.90
-            shares = size_usdc / estimated_price
+            # or low if we buy early. 
+            estimated_price = price
+            shares = size_usdc / estimated_price if estimated_price > 0 else 0
             
             trade_record = {
                 "user_id": "WEATHER_ENGINE",
