@@ -180,7 +180,7 @@ def get_status():
                     sb.table("autonomous_logs")
                     .select("correct")
                     .in_("correct", ["WIN", "LOSS"])
-                    .in_("decision", ["EXECUTED", "WOULD_EXECUTE"])
+                    .in_("decision", ["EXECUTED", "WOULD_EXECUTE", "EXECUTED_LIVE", "EXECUTED_SIM"])
                     .execute()
                 )
                 for row in (wl_resp.data or []):
