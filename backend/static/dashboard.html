@@ -480,15 +480,25 @@ function showTradeDetails(idx) {
     }
   }
 
-  const invested = parseFloat(t.invested_usdc || 0);
-  const shares   = parseFloat(t.shares_owned || 0);
+  const invested = parseFloat(t.invested_usdc || t.size_usdc || 0);
+  let shares   = parseFloat(t.shares_owned || 0);
   const ask      = parseFloat(t.best_ask || 0);
   const bid      = parseFloat(t.best_bid || 0);
   const spread   = parseFloat(t.spread || 0);
   const score    = parseFloat(t.council_score || 0);
-  const payout   = parseFloat(t.potential_payout || 0);
-  const profit   = parseFloat(t.potential_profit || 0);
-  const roi      = parseFloat(t.potential_roi_pct || 0);
+  let payout   = parseFloat(t.potential_payout || 0);
+  let profit   = parseFloat(t.potential_profit || 0);
+  let roi      = parseFloat(t.potential_roi_pct || 0);
+
+  // Calcular métricas faltantes basadas en el precio y la inversión si hubo ejecución
+  const isExecuted = (t.decision === 'WOULD_EXECUTE' || t.decision === 'EXECUTED' || t.decision === 'EXECUTED_LIVE');
+  if (isExecuted && invested > 0 && ask > 0) {
+    if (shares === 0) shares = invested / ask;
+    if (payout === 0) payout = shares * 1.00;
+    if (profit === 0) profit = payout - invested;
+    if (roi === 0) roi = (profit / invested) * 100;
+  }
+
   const status   = (t.correct || 'PENDING').toUpperCase();
   const statusColor = status === 'WIN' ? 'var(--accent-green)' : status === 'LOSS' ? 'var(--accent-red)' : 'var(--text-primary)';
 
