@@ -75,19 +75,27 @@ def get_status():
 
             # Step 2: Sum On-Chain Balances (Main + Proxy)
             chain_bal = 0.0
+            chain_details = []
             try:
                 from eth_account import Account
                 main_addr = Account.from_key(settings.PK).address
+                
+                # Check MATIC for activity verification
+                matic_main = wallet_manager.w3.eth.get_balance(main_addr) / 10**18
                 bal_main = wallet_manager.get_onchain_balance(main_addr)
+                chain_details.append(f"Main({main_addr[:6]}): ${bal_main} USDC | {matic_main:.2f} MATIC")
                 
                 # Check proxy balance if it's a different address
                 bal_proxy = 0.0
                 proxy_addr = getattr(settings, 'POLY_PROXY_ADDRESS', None)
                 if proxy_addr and proxy_addr.lower() != main_addr.lower():
                     bal_proxy = wallet_manager.get_onchain_balance(proxy_addr)
+                    matic_proxy = wallet_manager.w3.eth.get_balance(proxy_addr) / 10**18
+                    chain_details.append(f"Proxy({proxy_addr[:6]}): ${bal_proxy} USDC | {matic_proxy:.2f} MATIC")
                 
                 chain_bal = bal_main + bal_proxy
-                logger.info(f"[StatusRouter] Balance Check -> Main: {main_addr[:8]} (${bal_main}) | Proxy: {proxy_addr[:8] if proxy_addr else 'N/A'} (${bal_proxy})")
+                for detail in chain_details:
+                    logger.info(f"[StatusRouter] {detail}")
             except Exception as we:
                 logger.warning(f"[StatusRouter] On-chain balance fetch failed: {we}")
 
@@ -97,21 +105,14 @@ def get_status():
             # --- FINAL FALLBACK: If still 0, check Supabase Cache ---
             if usdc_balance == 0:
                 try:
-                    from eth_account import Account
-                    main_addr = Account.from_key(settings.PK).address
                     sb = _get_supabase()
                     if sb:
-                        # Fetch the first wallet record instead of filtering by 'default_user'
                         res = sb.table("user_wallets").select("balance_usdc").limit(1).execute()
                         if res.data and len(res.data) > 0:
                             usdc_balance = res.data[0].get("balance_usdc", 0.0)
-                            logger.info(f"[StatusRouter] Live fetch failed. Using Supabase fallback balance: ${usdc_balance}")
+                            logger.info(f"[StatusRouter] All live checks failed. Using Supabase cached balance: ${usdc_balance}")
                 except Exception as sbe:
-                    logger.debug(f"[StatusRouter] Supabase fallback also failed: {sbe}")
-
-            # Simulation fallback (only if everything is 0 and simulation is ON)
-            if settings.COPY_SIMULATION and usdc_balance == 0:
-                usdc_balance = 100.0
+                    logger.debug(f"[StatusRouter] Supabase fallback failed: {sbe}")
 
             _WALLET_BALANCE_CACHE["balance"] = usdc_balance
             _WALLET_BALANCE_CACHE["last_updated"] = time.time()
