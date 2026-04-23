@@ -43,17 +43,20 @@ def get_status():
     # ── Council cache stats ──
     cache_stats = council_cache.get_stats()
 
-    # ── Supabase queries ──
-    trades_today = 0
-    budget_spent = 0.0
+    # --- Initialize all variables first ---
     wins_total = 0
     losses_total = 0
     pnl_usdc = 0.0
+    total_traded = 0.0
+    avg_trade = 0.0
+    avg_pnl_per_trade = 0.0
+    trades_today = 0
+    budget_spent = 0.0
     recent_trades = []
+    usdc_balance = _WALLET_BALANCE_CACHE.get("balance", 0.0)
 
     # ── Poly USDC Balance (Cached 60s) ──
-    usdc_balance = _WALLET_BALANCE_CACHE["balance"]
-    if time.time() - _WALLET_BALANCE_CACHE["last_updated"] > 60:
+    if time.time() - _WALLET_BALANCE_CACHE.get("last_updated", 0) > 60:
         try:
             from app.core.client import PolyClient
             from py_clob_client.clob_types import AssetType, BalanceAllowanceParams
@@ -70,40 +73,38 @@ def get_status():
             except Exception as ce:
                 logger.warning(f"[StatusRouter] CLOB balance fetch failed: {ce}")
 
-            # Step 2: Try On-Chain Balance (Funds in wallet, not yet deposited)
+            # Step 2: Sum On-Chain Balances (Main + Proxy)
             chain_bal = 0.0
             try:
-                target_address = settings.POLY_PROXY_ADDRESS if hasattr(settings, 'POLY_PROXY_ADDRESS') and settings.POLY_PROXY_ADDRESS else Account.from_key(settings.PK).address
-                chain_bal = wallet_manager.get_onchain_balance(target_address)
-                logger.debug(f"[StatusRouter] On-Chain Balance: ${chain_bal}")
+                from eth_account import Account
+                main_addr = Account.from_key(settings.PK).address
+                bal_main = wallet_manager.get_onchain_balance(main_addr)
+                
+                # Check proxy balance if it's a different address
+                bal_proxy = 0.0
+                proxy_addr = getattr(settings, 'POLY_PROXY_ADDRESS', None)
+                if proxy_addr and proxy_addr.lower() != main_addr.lower():
+                    bal_proxy = wallet_manager.get_onchain_balance(proxy_addr)
+                
+                chain_bal = bal_main + bal_proxy
+                logger.debug(f"[StatusRouter] Balance aggregation: Main(${bal_main}) + Proxy(${bal_proxy}) = ${chain_bal}")
             except Exception as we:
                 logger.warning(f"[StatusRouter] On-chain balance fetch failed: {we}")
 
-            # Prioritize CLOB balance for the trading dashboard
-            final_bal = clob_bal if clob_bal > 0 else chain_bal
+            # Prioritize CLOB balance, but fallback to combined on-chain
+            usdc_balance = clob_bal if clob_bal > 0 else chain_bal
             
-            # Always respect COPY_SIMULATION if it returns a fake balance (100.0)
-            if settings.COPY_SIMULATION and chain_bal == 100.0:
-                final_bal = 100.0
+            # Simulation fallback (only if everything is 0 and simulation is ON)
+            if settings.COPY_SIMULATION and usdc_balance == 0:
+                usdc_balance = 100.0
 
-            usdc_balance = final_bal
             _WALLET_BALANCE_CACHE["balance"] = usdc_balance
             _WALLET_BALANCE_CACHE["last_updated"] = time.time()
             
         except Exception as e:
             logger.error(f"[StatusRouter] Critical balance update error: {e}")
 
-    # --- Initialize all variables to avoid UnboundLocalError ---
-    wins_total = 0
-    losses_total = 0
-    pnl_usdc = 0
-    total_traded = 0
-    avg_trade = 0
-    avg_pnl_per_trade = 0
-    trades_today = 0
-    budget_spent = 0
-    recent_trades = []
-    # -----------------------------------------------------------
+    # --- Supabase Statistics ---
 
     try:
         sb = _get_supabase()
