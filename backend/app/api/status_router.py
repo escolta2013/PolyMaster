@@ -93,6 +93,18 @@ def get_status():
         except Exception as e:
             logger.error(f"[StatusRouter] Critical balance update error: {e}")
 
+    # --- Initialize all variables to avoid UnboundLocalError ---
+    wins_total = 0
+    losses_total = 0
+    pnl_usdc = 0
+    total_traded = 0
+    avg_trade = 0
+    avg_pnl_per_trade = 0
+    trades_today = 0
+    budget_spent = 0
+    recent_trades = []
+    # -----------------------------------------------------------
+
     try:
         sb = _get_supabase()
         if sb:
@@ -239,8 +251,6 @@ def get_status():
                 pass
 
             # Advanced Metrics from copy_trades
-            total_traded = 0
-            trade_count = 0
             try:
                 metrics_resp = (
                     sb.table("copy_trades")
