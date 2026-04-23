@@ -36,7 +36,7 @@ class PolyClient:
             # Ensure addresses are checksummed to avoid the error seen in logs
             if is_proxy:
                 sig_type = 2  # GNOSIS_SAFE/POLY_PROXY  
-                funder = Web3.to_checksum_address(Account.from_key(pk).address)
+                funder = Web3.to_checksum_address(settings.POLY_PROXY_ADDRESS)
                 logger.info(f"Proxy wallet detected. Using sig_type=2 (GNOSIS_SAFE) with funder={funder}")      
             else:
                 sig_type = 0  # EOA
