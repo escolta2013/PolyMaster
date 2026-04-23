@@ -87,7 +87,7 @@ def get_status():
                     bal_proxy = wallet_manager.get_onchain_balance(proxy_addr)
                 
                 chain_bal = bal_main + bal_proxy
-                logger.debug(f"[StatusRouter] Balance aggregation: Main(${bal_main}) + Proxy(${bal_proxy}) = ${chain_bal}")
+                logger.info(f"[StatusRouter] Balance Check -> Main: {main_addr[:8]} (${bal_main}) | Proxy: {proxy_addr[:8] if proxy_addr else 'N/A'} (${bal_proxy})")
             except Exception as we:
                 logger.warning(f"[StatusRouter] On-chain balance fetch failed: {we}")
 
@@ -101,9 +101,10 @@ def get_status():
                     main_addr = Account.from_key(settings.PK).address
                     sb = _get_supabase()
                     if sb:
-                        res = sb.table("user_wallets").select("balance_usdc").eq("user_id", "default_user").single().execute()
-                        if res.data:
-                            usdc_balance = res.data.get("balance_usdc", 0.0)
+                        # Fetch the first wallet record instead of filtering by 'default_user'
+                        res = sb.table("user_wallets").select("balance_usdc").limit(1).execute()
+                        if res.data and len(res.data) > 0:
+                            usdc_balance = res.data[0].get("balance_usdc", 0.0)
                             logger.info(f"[StatusRouter] Live fetch failed. Using Supabase fallback balance: ${usdc_balance}")
                 except Exception as sbe:
                     logger.debug(f"[StatusRouter] Supabase fallback also failed: {sbe}")
@@ -378,6 +379,9 @@ def get_recent_logs(lines: int = 100):
     log_paths = [
         "logs/autonomous.log",
         "../logs/autonomous.log",
+        "app/logs/autonomous.log",
+        "/home/ubuntu/PolyMaster/backend/logs/autonomous.log",
+        os.path.join(os.getcwd(), "logs", "autonomous.log")
     ]
 
     for path in log_paths:
