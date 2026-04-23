@@ -107,6 +107,7 @@ def get_status():
         usdc_balance = max(chain_sum, clob_bal)
         
         # Dashboard Console Logging
+        logger.info(f"[BalanceSync] Addresses: Main={main_addr[:8]}... | Proxy={str(proxy_addr)[:8]}...")
         logger.info(f"[BalanceSync] Total: ${usdc_balance:.2f} | Exchange: ${clob_bal:.2f} | Wallet: ${chain_sum:.2f}")
 
         # Save to global cache
