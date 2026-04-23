@@ -78,10 +78,11 @@ def get_status():
             chain_details = []
             try:
                 from eth_account import Account
+                from web3 import Web3
                 main_addr = Account.from_key(settings.PK).address
                 
                 # Check MATIC for activity verification
-                matic_main = wallet_manager.w3.eth.get_balance(main_addr) / 10**18
+                matic_main = wallet_manager.w3.eth.get_balance(Web3.to_checksum_address(main_addr)) / 10**18
                 bal_main = wallet_manager.get_onchain_balance(main_addr)
                 chain_details.append(f"Main({main_addr[:6]}): ${bal_main} USDC | {matic_main:.2f} MATIC")
                 
@@ -89,8 +90,10 @@ def get_status():
                 bal_proxy = 0.0
                 proxy_addr = getattr(settings, 'POLY_PROXY_ADDRESS', None)
                 if proxy_addr and proxy_addr.lower() != main_addr.lower():
-                    bal_proxy = wallet_manager.get_onchain_balance(proxy_addr)
-                    matic_proxy = wallet_manager.w3.eth.get_balance(proxy_addr) / 10**18
+                    # FIX: Force checksum address for web3 calls
+                    safe_proxy = Web3.to_checksum_address(proxy_addr)
+                    bal_proxy = wallet_manager.get_onchain_balance(safe_proxy)
+                    matic_proxy = wallet_manager.w3.eth.get_balance(safe_proxy) / 10**18
                     chain_details.append(f"Proxy({proxy_addr[:6]}): ${bal_proxy} USDC | {matic_proxy:.2f} MATIC")
                 
                 chain_bal = bal_main + bal_proxy
