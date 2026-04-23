@@ -758,28 +758,39 @@ function showTradeDetails(idx) {
   modal.style.display = 'flex';
 }
 
+function updateValue(id, val, formatClass = '') {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (el.textContent !== String(val)) {
+    el.textContent = val;
+    if (formatClass) el.className = formatClass;
+    el.classList.remove('flash-update');
+    void el.offsetWidth; 
+    el.classList.add('flash-update');
+  }
+}
+
 async function fetchStatus() {
   try {
     const res = await fetch(`${API}/api/status`, { signal: AbortSignal.timeout(10000) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const d = await res.json();
-    document.getElementById('error-overlay').style.display = 'none';
 
-    // State Badge
-    const stateBadgeEl = document.getElementById('bot-state').parentElement;
+    // Bot Status & Connectivity
     const isRunning = d.bot_running;
-    document.getElementById('bot-state').textContent = isRunning ? 'ONLINE' : 'OFFLINE';
-    document.getElementById('status-dot').style.color = isRunning ? 'var(--accent-green)' : 'var(--accent-red)';
+    updateValue('bot-state', isRunning ? 'ONLINE' : 'OFFLINE');
+    const dot = document.getElementById('status-dot');
+    if (dot) dot.style.color = isRunning ? 'var(--accent-green)' : 'var(--accent-red)';
     
-    // Mode Badge
+    // Mode Logic
     const mb = document.getElementById('mode-badge');
     const st = document.getElementById('sim-text');
-    if (d.simulation_mode) {
-      mb.className = 'badge badge-sim'; st.textContent = 'SIMULATION';
-      mb.querySelector('.status-dot').style.color = 'var(--accent-amber)';
-    } else {
-      mb.className = 'badge badge-live'; st.textContent = 'LIVE TRADING';
-      mb.querySelector('.status-dot').style.color = 'var(--accent-green)';
+    if (mb && st) {
+        if (d.simulation_mode) {
+          mb.className = 'badge badge-sim'; st.textContent = 'SIMULATION';
+        } else {
+          mb.className = 'badge badge-live'; st.textContent = 'LIVE TRADING';
+        }
     }
 
     // Uptime
@@ -787,56 +798,41 @@ async function fetchStatus() {
     const h = Math.floor(secs/3600), m = Math.floor((secs%3600)/60), s = secs%60;
     updateValue('uptime', `${h}h ${m}m ${s}s`);
 
-    // Portfolio & Professional Stats
-    const bal = d.wallet_balance_usdc ?? 0;
-    updateValue('wallet-balance', `$${bal.toFixed(2)}`, 'metric-val val-green');
-    
+    // Top Metrics
+    updateValue('wallet-balance', `$${(d.wallet_balance_usdc ?? 0).toFixed(2)}`);
     const pnl = d.pnl_usdc ?? 0;
     updateValue('pnl-summary', (pnl >= 0 ? '+' : '') + `$${pnl.toFixed(2)}`, 'summary-val ' + (pnl>=0?'val-green':'val-red'));
-    
     updateValue('total-traded-summary', `$${(d.total_traded || 0).toFixed(2)}`);
-    updateValue('avg-trade-summary', `$${(d.avg_trade_size || 0).toFixed(2)}`);
-    updateValue('avg-pnl-summary', (d.avg_pnl_trade >= 0 ? '+' : '') + `$${(d.avg_pnl_trade || 0).toFixed(2)}`, 'summary-val ' + (d.avg_pnl_trade >= 0 ? 'val-green' : 'val-red'));
-
-    // Budgets
-    const spent = d.budget_spent_today ?? 0;
-    const limit = d.budget_daily_limit ?? 100;
-    updateValue('budget-used', `$${spent.toFixed(2)}`);
-    updateValue('budget-limit', `$${limit.toFixed(2)}`);
+    updateValue('win-loss-summary', `${d.wins_total || 0} / ${d.losses_total || 0}`);
     
-    const pct = (spent / limit) * 100;
-    const bar = document.getElementById('budget-bar');
-    bar.style.width = Math.min(pct, 100) + '%';
-    bar.className = 'bar-fill ' + (pct > 80 ? 'fill-warn' : 'fill-green');
+    const winRate = (d.wins_total + d.losses_total > 0) ? ((d.wins_total / (d.wins_total + d.losses_total)) * 100).toFixed(1) : '0';
+    updateValue('win-rate-summary', `${winRate}% Win Rate`);
 
-    // Council Tracking
+    // Council & Wallet Grid (The new row)
     const calls = d.council_calls_today ?? 0;
     const cLim = d.council_budget ?? 300;
-    updateValue('council-calls', Math.floor(calls));
+    updateValue('council-calls', `${Math.floor(calls)} / ${cLim}`);
+    updateValue('council-hit-rate', d.cache_hit_rate ?? '0%');
     
     const cPct = (calls / cLim) * 100;
-    const cbar = document.getElementById('council-bar');
-    cbar.style.width = Math.min(cPct, 100) + '%';
-    cbar.className = 'bar-fill ' + (cPct > 80 ? 'fill-warn' : 'fill-green');
+    const cBar = document.getElementById('calls-progress');
+    if (cBar) cBar.style.width = Math.min(cPct, 100) + '%';
 
-    // Misc metrics
-    const w = d.wins_total ?? 0; const l = d.losses_total ?? 0;
-    const winRate = (w+l > 0) ? `${((w/(w+l))*100).toFixed(1)}%` : '0%';
-    updateValue('win-loss-summary', `${w} / ${l}`);
-    updateValue('win-rate-summary', `${winRate} win rate`);
+    const spent = d.budget_spent_today ?? 0;
+    const limit = d.budget_daily_limit ?? 50;
+    updateValue('wallet-limit', `$${spent.toFixed(2)} / $${limit.toFixed(2)}`);
     
-    updateValue('cache-hits', d.cache_hit_rate ?? '0%');
-    updateValue('cached-markets', d.cached_markets ?? 0);
-    updateValue('tokens-saved', d.tokens_saved ?? 0);
-    updateValue('threshold', d._confidence_threshold ?? d.confidence_threshold ?? 0.68);
+    const bPct = (spent / limit) * 100;
+    const bBar = document.getElementById('limit-progress');
+    if (bBar) bBar.style.width = Math.min(bPct, 100) + '%';
+
+    // Secondary Stats (Average / Threshold)
+    updateValue('avg-pnl-summary', (d.avg_pnl_trade >= 0 ? '+' : '') + `$${(d.avg_pnl_trade || 0).toFixed(2)}`);
 
     renderTrades(d.recent_trades);
 
   } catch(e) {
-    if (e.name !== 'AbortError') {
-      document.getElementById('error-overlay').style.display = 'flex';
-      document.getElementById('error-msg').textContent = e.message;
-    }
+    console.error("Dashboard Sync Error:", e.message);
   } finally {
     setTimeout(fetchStatus, 3000);
   }
