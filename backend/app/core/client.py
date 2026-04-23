@@ -36,7 +36,7 @@ class PolyClient:
             # Ensure addresses are checksummed to avoid the error seen in logs
             if is_proxy:
                 sig_type = 2  # GNOSIS_SAFE/POLY_PROXY
-                funder = Web3.to_checksum_address(Account.from_key(pk).address)
+                funder = Web3.to_checksum_address(settings.POLY_PROXY_ADDRESS)
                 logger.info(f"Proxy wallet detected. Using sig_type=2 (GNOSIS_SAFE) with funder={funder}")
             else:
                 sig_type = 0  # EOA
@@ -57,15 +57,12 @@ class PolyClient:
                     return client_instance.create_or_derive_api_creds()
             
             try:
-                proxy_addr_clean = Web3.to_checksum_address(settings.POLY_PROXY_ADDRESS) if is_proxy else None
-                
                 temp_client = PolymarketClobClient(
                     host=self.host,
                     key=pk,
                     chain_id=chain_id,
                     signature_type=sig_type,
-                    funder=funder,
-                    proxy_address=proxy_addr_clean
+                    funder=funder
                 )
                 creds = _get_creds(temp_client)
                 
@@ -75,8 +72,7 @@ class PolyClient:
                     chain_id=chain_id,
                     signature_type=sig_type,
                     funder=funder,
-                    creds=creds,
-                    proxy_address=proxy_addr_clean
+                    creds=creds
                 )
                 logger.success(f"Authenticated SDK Client Ready (Type {sig_type}, funder={funder})")
             except Exception as e:
@@ -88,18 +84,15 @@ class PolyClient:
                 alt_funder = None if alt_sig_type == 0 else (funder or settings.POLY_PROXY_ADDRESS if hasattr(settings, 'POLY_PROXY_ADDRESS') else None)
                 logger.warning(f"Authentication failed with Type {sig_type}: {e}. Trying Type {alt_sig_type} fallback...")
                 try:
-                    alt_proxy = proxy_addr_clean if alt_sig_type == 2 else None
                     temp_client = PolymarketClobClient(
                         host=self.host, key=pk, chain_id=chain_id,
-                        signature_type=alt_sig_type, funder=alt_funder,
-                        proxy_address=alt_proxy
+                        signature_type=alt_sig_type, funder=alt_funder
                     )
                     creds = _get_creds(temp_client)
                     self.sdk = PolymarketClobClient(
                         host=self.host, key=pk, chain_id=chain_id,
                         signature_type=alt_sig_type, funder=alt_funder,
-                        creds=creds,
-                        proxy_address=alt_proxy
+                        creds=creds
                     )
                     logger.success(f"Authenticated SDK Client Ready (Type {alt_sig_type} FALLBACK, funder={alt_funder})")
                 except Exception as e2:
@@ -117,8 +110,7 @@ class PolyClient:
         from web3 import Web3
         is_proxy = hasattr(settings, 'POLY_PROXY_ADDRESS') and settings.POLY_PROXY_ADDRESS
         sig_type = 2 if is_proxy else 0
-        funder = Web3.to_checksum_address(Account.from_key(pk).address) if is_proxy else None
-        proxy_address = Web3.to_checksum_address(settings.POLY_PROXY_ADDRESS) if is_proxy else None
+        funder = Web3.to_checksum_address(settings.POLY_PROXY_ADDRESS) if is_proxy else None
         
         try:
             client = PolymarketClobClient(
@@ -126,8 +118,7 @@ class PolyClient:
                 key=pk,
                 chain_id=137,
                 signature_type=sig_type,
-                funder=funder,
-                proxy_address=proxy_address
+                funder=funder
             )
             creds = client.create_or_derive_api_creds()
             client.set_api_creds(creds)
