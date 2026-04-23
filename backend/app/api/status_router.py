@@ -23,7 +23,10 @@ def _get_supabase():
 
 import time
 from eth_account import Account
+from web3 import Web3
+from app.core.config import settings
 from app.engines.wallet.manager import wallet_manager
+from app.engines.council.cache import council_cache
 
 # ── Bot start time (tracks uptime from when this module was first loaded) ──
 _START_TIME = datetime.now(timezone.utc)
@@ -35,8 +38,7 @@ def get_status():
     Returns a JSON snapshot of the bot's current state.
     Called every 5 seconds by the dashboard.
     """
-    from app.core.config import settings
-    from app.engines.council.cache import council_cache
+    uptime_secs = int((datetime.now(timezone.utc) - _START_TIME).total_seconds())
 
     uptime_secs = int((datetime.now(timezone.utc) - _START_TIME).total_seconds())
 
@@ -60,9 +62,7 @@ def get_status():
     try:
         from app.core.client import PolyClient
         from py_clob_client.clob_types import AssetType, BalanceAllowanceParams
-        from eth_account import Account
         from web3 import Web3
-        import time
         
         p_client = PolyClient.get_instance()
         clob_bal = 0.0
