@@ -94,6 +94,20 @@ def get_status():
             # Prioritize CLOB balance, but fallback to combined on-chain
             usdc_balance = clob_bal if clob_bal > 0 else chain_bal
             
+            # --- FINAL FALLBACK: If still 0, check Supabase Cache ---
+            if usdc_balance == 0:
+                try:
+                    from eth_account import Account
+                    main_addr = Account.from_key(settings.PK).address
+                    sb = _get_supabase()
+                    if sb:
+                        res = sb.table("user_wallets").select("balance_usdc").eq("user_id", "default_user").single().execute()
+                        if res.data:
+                            usdc_balance = res.data.get("balance_usdc", 0.0)
+                            logger.info(f"[StatusRouter] Live fetch failed. Using Supabase fallback balance: ${usdc_balance}")
+                except Exception as sbe:
+                    logger.debug(f"[StatusRouter] Supabase fallback also failed: {sbe}")
+
             # Simulation fallback (only if everything is 0 and simulation is ON)
             if settings.COPY_SIMULATION and usdc_balance == 0:
                 usdc_balance = 100.0
