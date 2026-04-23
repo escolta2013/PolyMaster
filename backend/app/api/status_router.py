@@ -167,10 +167,13 @@ def get_status():
                 # Use structured data if available, fallback to extraction for old records
                 t["display_city"] = t.get("city")
                 if not t["display_city"] or t["display_city"] == "General":
-                    q = t.get("question", "").lower()
-                    r = t.get("reasoning", "").lower()
+                    q = str(t.get("question") or "").lower()
+                    # Safe handle reasoning which could be a dict (JSONB) or string
+                    r_val = t.get("reasoning")
+                    r_str = str(r_val).lower() if r_val else ""
+                    
                     for city_name in ["Philadelphia", "Chicago", "New York", "London", "Paris", "Madrid", "Tokyo", "Seoul", "Ankara", "Istanbul"]:
-                        if city_name.lower() in q or city_name.lower() in r:
+                        if city_name.lower() in q or city_name.lower() in r_str:
                             t["display_city"] = city_name
                             break
                     if not t["display_city"]: t["display_city"] = "General"

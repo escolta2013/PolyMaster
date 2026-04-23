@@ -115,15 +115,18 @@ class WeatherManager:
             logger.info(f"Weather Analysis (RAIN): {city} | Forecast Prob: {avg_prob}%")
             
             # Strategy: Edge relative to market price
-            intel = await self.client.get_market_intelligence(market_id)
-            if not intel: return
+            yes_token = market.get("clobTokenIds", [None])[0]
+            if not yes_token: return
+            
+            intel = await self.client.get_orderbook(yes_token)
+            if not intel or intel.get("error"): 
+                logger.warning(f"Weather Analysis: Could not fetch price for {city} (Token: {yes_token})")
+                return
             
             price_yes = intel.get("best_ask", 0.5)
             # Thresholds: Confidence > 85% for YES, < 15% for NO
             if avg_prob > 85 and price_yes < 0.70:
-                yes_token = market.get("clobTokenIds", [None])[0]
-                if yes_token:
-                    await self._execute_trade(market, yes_token, avg_prob, 0, f"High rain certainty ({avg_prob}%) vs Price ({price_yes})", price_yes, intel.get("best_bid", 0), intel.get("spread", 0))
+                await self._execute_trade(market, yes_token, avg_prob, 0, f"High rain certainty ({avg_prob}%) vs Price ({price_yes})", price_yes, intel.get("best_bid", 0), intel.get("spread", 0))
             elif avg_prob < 15 and price_yes > 0.30:
                 no_token = market.get("clobTokenIds", [None, None])[1]
                 if no_token:
@@ -152,23 +155,15 @@ class WeatherManager:
             
         # Determine strict consensus actual_temp for logging
         actual_temp = round(sum(actual_temps) / len(actual_temps), 2)
-        
+              
         # 5. Compare with Market Price
         # We need the YES token
         token_ids = market.get("clobTokenIds", [])
-        if isinstance(token_ids, str):
-            try:
-                import json
-                token_ids = json.loads(token_ids)
-            except:
-                token_ids = []
-        
-        if not token_ids or not isinstance(token_ids, list): 
-            logger.warning(f"Weather Exploit: No valid token IDs found for {market.get('id')}")
+        if not token_ids:
+            logger.warning(f"Weather Exploit: No token IDs for market {market_id}")
             return
             
         yes_token_id = token_ids[0]
-        
         # Get market price
         intel = await self.client.get_orderbook(yes_token_id)
         current_price = intel.get("midpoint", 0.5)
@@ -294,8 +289,10 @@ class WeatherManager:
                 data = resp.json()
                 probs = data.get("hourly", {}).get("precipitation_probability", [])
                 if probs:
-                    # Return max probability in the next few hours
-                    return float(max(probs[:6])) 
+                    # Filter out None values to prevent max() comparison error
+                    valid_probs = [p for p in probs[:6] if p is not None]
+                    if valid_probs:
+                        return float(max(valid_probs))
         except Exception as e:
             logger.warning(f"ECMWF Rain Prob Error: {e}")
         return None
@@ -314,7 +311,10 @@ class WeatherManager:
                 data = resp.json()
                 probs = data.get("hourly", {}).get("precipitation_probability", [])
                 if probs:
-                    return float(max(probs[:6]))
+                    # Filter out None values to prevent max() comparison error
+                    valid_probs = [p for p in probs[:6] if p is not None]
+                    if valid_probs:
+                        return float(max(valid_probs))
         except Exception as e:
             logger.error(f"Open-Meteo Rain Error: {e}")
         return None
