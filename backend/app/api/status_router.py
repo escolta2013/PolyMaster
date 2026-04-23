@@ -60,33 +60,40 @@ def get_status():
     try:
         from app.core.client import PolyClient
         from py_clob_client.clob_types import AssetType, BalanceAllowanceParams
+        from eth_account import Account
         from web3 import Web3
+        import time
         
         p_client = PolyClient.get_instance()
         clob_bal = 0.0
         
-        # 1. Check CLOB
+        # 1. Check CLOB (Funds ready to trade)
         try:
             if p_client and p_client.sdk:
                 clob_bal_raw = p_client.sdk.get_balance_allowance(BalanceAllowanceParams(asset_type=AssetType.COLLATERAL))
                 clob_bal = float(clob_bal_raw.get("balance", 0)) / 10**6
-        except:
-            pass
+        except Exception as e:
+            logger.debug(f"CLOB balance fetch skipped: {e}")
 
-        # 2. Check On-Chain
+        # 2. Check On-Chain (Funds in Wallet)
         main_addr = Account.from_key(settings.PK).address
-        bal_main = wallet_manager.get_onchain_balance(main_addr)
+        bal_main = wallet_manager.get_onchain_balance(Web3.to_checksum_address(main_addr))
         
         proxy_addr = getattr(settings, 'POLY_PROXY_ADDRESS', None)
         bal_proxy = 0.0
         if proxy_addr:
             bal_proxy = wallet_manager.get_onchain_balance(Web3.to_checksum_address(proxy_addr))
         
-        # Total sum (Mirroring what worked before)
+        # Total sum
+        # If CLOB has money, show that. If not, show what's in the wallets.
         usdc_balance = clob_bal if clob_bal > 0 else (bal_main + bal_proxy)
         
+        # Guardar en el cache global por si acaso
+        _WALLET_BALANCE_CACHE["balance"] = usdc_balance
+        _WALLET_BALANCE_CACHE["last_updated"] = time.time()
+        
     except Exception as e:
-        logger.error(f"[StatusRouter] Balance fetch error: {e}")
+        logger.error(f"[StatusRouter] CRITICAL Balance fetch error: {e}")
 
     # --- Supabase Statistics ---
 
