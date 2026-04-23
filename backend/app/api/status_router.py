@@ -55,73 +55,38 @@ def get_status():
     recent_trades = []
     usdc_balance = _WALLET_BALANCE_CACHE.get("balance", 0.0)
 
-    # ── Poly USDC Balance (Cached 60s) ──
-    if time.time() - _WALLET_BALANCE_CACHE.get("last_updated", 0) > 60:
+    # ── Poly USDC Balance (Direct Fetch) ──
+    usdc_balance = 0.0
+    try:
+        from app.core.client import PolyClient
+        from py_clob_client.clob_types import AssetType, BalanceAllowanceParams
+        from web3 import Web3
+        
+        p_client = PolyClient.get_instance()
+        clob_bal = 0.0
+        
+        # 1. Check CLOB
         try:
-            from app.core.client import PolyClient
-            from py_clob_client.clob_types import AssetType, BalanceAllowanceParams
-            
-            p_client = PolyClient.get_instance()
-            clob_bal = 0.0
-            
-            # Step 1: Try Internal CLOB Balance (The funds ready to trade)
-            try:
-                if p_client and p_client.sdk:
-                    clob_bal_raw = p_client.sdk.get_balance_allowance(BalanceAllowanceParams(asset_type=AssetType.COLLATERAL))
-                    clob_bal = float(clob_bal_raw.get("balance", 0)) / 10**6
-                    logger.debug(f"[StatusRouter] Internal CLOB Balance: ${clob_bal}")
-            except Exception as ce:
-                logger.warning(f"[StatusRouter] CLOB balance fetch failed: {ce}")
+            if p_client and p_client.sdk:
+                clob_bal_raw = p_client.sdk.get_balance_allowance(BalanceAllowanceParams(asset_type=AssetType.COLLATERAL))
+                clob_bal = float(clob_bal_raw.get("balance", 0)) / 10**6
+        except:
+            pass
 
-            # Step 2: Sum On-Chain Balances (Main + Proxy)
-            chain_bal = 0.0
-            chain_details = []
-            try:
-                from eth_account import Account
-                from web3 import Web3
-                main_addr = Account.from_key(settings.PK).address
-                
-                # Check MATIC for activity verification
-                matic_main = wallet_manager.w3.eth.get_balance(Web3.to_checksum_address(main_addr)) / 10**18
-                bal_main = wallet_manager.get_onchain_balance(main_addr)
-                chain_details.append(f"Main({main_addr[:6]}): ${bal_main} USDC | {matic_main:.2f} MATIC")
-                
-                # Check proxy balance if it's a different address
-                bal_proxy = 0.0
-                proxy_addr = getattr(settings, 'POLY_PROXY_ADDRESS', None)
-                if proxy_addr and proxy_addr.lower() != main_addr.lower():
-                    # FIX: Force checksum address for web3 calls
-                    safe_proxy = Web3.to_checksum_address(proxy_addr)
-                    bal_proxy = wallet_manager.get_onchain_balance(safe_proxy)
-                    matic_proxy = wallet_manager.w3.eth.get_balance(safe_proxy) / 10**18
-                    chain_details.append(f"Proxy({proxy_addr[:6]}): ${bal_proxy} USDC | {matic_proxy:.2f} MATIC")
-                
-                chain_bal = bal_main + bal_proxy
-                for detail in chain_details:
-                    logger.info(f"[StatusRouter] {detail}")
-            except Exception as we:
-                logger.warning(f"[StatusRouter] On-chain balance fetch failed: {we}")
-
-            # Prioritize CLOB balance, but fallback to combined on-chain
-            usdc_balance = clob_bal if clob_bal > 0 else chain_bal
-            
-            # --- FINAL FALLBACK: If still 0, check Supabase Cache ---
-            if usdc_balance == 0:
-                try:
-                    sb = _get_supabase()
-                    if sb:
-                        res = sb.table("user_wallets").select("balance_usdc").limit(1).execute()
-                        if res.data and len(res.data) > 0:
-                            usdc_balance = res.data[0].get("balance_usdc", 0.0)
-                            logger.info(f"[StatusRouter] All live checks failed. Using Supabase cached balance: ${usdc_balance}")
-                except Exception as sbe:
-                    logger.debug(f"[StatusRouter] Supabase fallback failed: {sbe}")
-
-            _WALLET_BALANCE_CACHE["balance"] = usdc_balance
-            _WALLET_BALANCE_CACHE["last_updated"] = time.time()
-            
-        except Exception as e:
-            logger.error(f"[StatusRouter] Critical balance update error: {e}")
+        # 2. Check On-Chain
+        main_addr = Account.from_key(settings.PK).address
+        bal_main = wallet_manager.get_onchain_balance(main_addr)
+        
+        proxy_addr = getattr(settings, 'POLY_PROXY_ADDRESS', None)
+        bal_proxy = 0.0
+        if proxy_addr:
+            bal_proxy = wallet_manager.get_onchain_balance(Web3.to_checksum_address(proxy_addr))
+        
+        # Total sum (Mirroring what worked before)
+        usdc_balance = clob_bal if clob_bal > 0 else (bal_main + bal_proxy)
+        
+    except Exception as e:
+        logger.error(f"[StatusRouter] Balance fetch error: {e}")
 
     # --- Supabase Statistics ---
 

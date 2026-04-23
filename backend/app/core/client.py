@@ -28,25 +28,17 @@ class PolyClient:
         
         if pk:
             logger.info("Initializing fully authenticated PolyClient")
+            from web3 import Web3
             is_proxy = hasattr(settings, 'POLY_PROXY_ADDRESS') and settings.POLY_PROXY_ADDRESS
             
             # ── Signature Type Selection ──────────────────────────────────────
-            # sig_type=0 (EOA): Direct wallet signing. maker = address(PK).
-            # sig_type=1 (POLY_PROXY): Polymarket proxy wallet. maker = funder.
-            # sig_type=2 (GNOSIS_SAFE): Gnosis Safe. maker = funder.
-            #
-            # If POLY_PROXY_ADDRESS is set, the user's funds live in the PROXY,
-            # not in the EOA. We MUST use sig_type=1 so the order's `maker`
-            # field points to the proxy address (which has the USDC balance).
-            # Using sig_type=0 with a proxy account → 400 invalid signature
-            # because maker=EOA has no funds/allowances on the exchange.
-            # ──────────────────────────────────────────────────────────────────
+            # Ensure addresses are checksummed to avoid the error seen in logs
             if is_proxy:
-                sig_type = 2  # GNOSIS_SAFE/POLY_PROXY — PK signs, proxy wallet is the maker
-                funder = settings.POLY_PROXY_ADDRESS
+                sig_type = 2  # GNOSIS_SAFE/POLY_PROXY
+                funder = Web3.to_checksum_address(settings.POLY_PROXY_ADDRESS)
                 logger.info(f"Proxy wallet detected. Using sig_type=2 (GNOSIS_SAFE) with funder={funder}")
             else:
-                sig_type = 0  # EOA — direct signing, no proxy
+                sig_type = 0  # EOA
                 funder = None
                 logger.info("No proxy wallet. Using sig_type=0 (EOA)")
             
@@ -114,14 +106,12 @@ class PolyClient:
         Creates a temporary authenticated ClobClient for a specific private key.
         Used for executing trades on behalf of proxy wallets.
         """
+        from web3 import Web3
         is_proxy = hasattr(settings, 'POLY_PROXY_ADDRESS') and settings.POLY_PROXY_ADDRESS
         sig_type = 2 if is_proxy else 0
-        funder = settings.POLY_PROXY_ADDRESS if is_proxy else None
+        funder = Web3.to_checksum_address(settings.POLY_PROXY_ADDRESS) if is_proxy else None
         
         try:
-            # ── Signature Type Selection ──────────────────────────────────────
-            # Match the logic in __init__ for consistency.
-            # ──────────────────────────────────────────────────────────────────
             client = PolymarketClobClient(
                 host=self.host,
                 key=pk,
@@ -129,7 +119,6 @@ class PolyClient:
                 signature_type=sig_type,
                 funder=funder
             )
-            # Derive API creds (L2 authentication)
             creds = client.create_or_derive_api_creds()
             client.set_api_creds(creds)
             return client
