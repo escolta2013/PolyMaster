@@ -3,6 +3,7 @@ import httpx
 import asyncio
 from typing import List, Dict, Any, Optional
 from py_clob_client.client import ClobClient as PolymarketClobClient
+from eth_account import Account
 from app.core.config import settings
 
 class PolyClient:
