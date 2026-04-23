@@ -140,11 +140,15 @@
   .summary-sub { font-size: 10px; color: var(--text-secondary); margin-top: 4px; }
 
   /* Badges & Joy */
+  .badge { padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; text-transform: uppercase; }
+  .badge-sim { background: rgba(255, 165, 0, 0.15); color: #ffa500; border: 1px solid rgba(255, 165, 0, 0.3); }
+  .badge-live { background: rgba(255, 71, 87, 0.15); color: #ff4757; border: 1px solid rgba(255, 71, 87, 0.3); }
+
   .city-badge {
     background: rgba(0, 229, 255, 0.1);
     color: var(--accent-cyan);
     padding: 3px 8px;
-    border-radius: 6px;
+    border-radius: 12px;
     font-size: 0.7rem;
     font-weight: 600;
     border: 1px solid rgba(0, 229, 255, 0.2);
@@ -159,11 +163,15 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
+    text-transform: uppercase;
   }
 
-  .type-HIGH { background: rgba(255, 71, 87, 0.1); color: #ff4757; border: 1px solid rgba(255, 71, 87, 0.2); }
-  .type-LOW { background: rgba(0, 229, 255, 0.1); color: #00e5ff; border: 1px solid rgba(0, 229, 255, 0.2); }
-  .type-RAIN { background: rgba(46, 213, 115, 0.1); color: #2ed573; border: 1px solid rgba(46, 213, 115, 0.2); }
+  .type-high { background: rgba(255, 71, 87, 0.1); color: #ff4757; border: 1px solid rgba(255, 71, 87, 0.2); }
+  .type-low { background: rgba(0, 229, 255, 0.1); color: #00e5ff; border: 1px solid rgba(0, 229, 255, 0.2); }
+  .type-rain { background: rgba(112, 161, 255, 0.1); color: #70a1ff; border: 1px solid rgba(112, 161, 255, 0.2); }
+
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+  .animate-row { animation: fadeIn 0.4s ease-out forwards; }
 
   .progress-container {
     width: 100%; height: 6px; background: rgba(255, 255, 255, 0.05);
@@ -382,63 +390,46 @@
         <!-- Secondary Row: Council and Wallet sharing a line -->
         <div class="secondary-grid">
             <!-- Council Swarm -->
-            <div class="card">
-                <div class="card-header">
-                    <span>COUNCIL SWARM</span>
-                    <span id="hit-rate-badge" class="status-indicator">0.0%</span>
+            <div class="metric-card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <span class="summary-label">COUNCIL SWARM</span>
+                    <span id="council-hit-rate" class="status-indicator">0%</span>
                 </div>
-                <div class="card-body">
-                    <div class="log-entry">
-                        <span>Hit Rate</span>
-                        <span id="council-hit-rate" class="accent-text">0.0%</span>
-                    </div>
-                    <div class="log-entry">
-                        <span>AI Calls</span>
-                        <span id="council-calls" class="dim-text">0 / 300</span>
-                    </div>
-                    <div class="progress-container">
-                        <div id="calls-progress" class="progress-bar" style="width: 0%"></div>
-                    </div>
+                <div style="margin: 10px 0;">
+                    <div class="summary-val" id="council-calls" style="font-size: 24px;">0 / 300</div>
+                    <div class="summary-label" style="font-size: 10px; margin-top: 5px;">Daily AI Calls</div>
+                </div>
+                <div class="progress-container">
+                    <div id="calls-progress" class="progress-bar" style="width: 0%"></div>
                 </div>
             </div>
 
             <!-- Wallet & Risk -->
-            <div class="card">
-                <div class="card-header">
-                    <span>WALLET & RISK</span>
+            <div class="metric-card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <span class="summary-label">WALLET & RISK</span>
+                    <span class="dim-text" style="font-size: 0.7rem;">Simulated</span>
                 </div>
-                <div class="card-body">
-                    <div class="log-entry">
-                        <span>Balance</span>
-                        <span id="wallet-balance" class="accent-text">$0.00</span>
-                    </div>
-                    <div class="log-entry">
-                        <span>Daily Limit</span>
-                        <span id="wallet-limit" class="dim-text">$0.00 / $50.00</span>
-                    </div>
-                    <div class="progress-container">
-                        <div id="limit-progress" class="progress-bar" style="width: 0%; background: #ff4757;"></div>
-                    </div>
+                <div style="margin: 10px 0;">
+                    <div class="summary-val" id="wallet-limit" style="font-size: 24px;">$0.00 / $50.00</div>
+                    <div class="summary-label" style="font-size: 10px; margin-top: 5px;">Daily Budget Usage</div>
+                </div>
+                <div class="progress-container">
+                    <div id="limit-progress" class="progress-bar" style="width: 0%; background: #ff4757;"></div>
                 </div>
             </div>
         </div>
 
         <!-- Market P&L Data -->
-        <div class="card">
-            <div class="card-header">
-                <span>MARKET PERFORMANCE DATA</span>
-                <span class="dim-text" style="font-size: 0.8rem;">Live execution audit</span>
-            </div>
-            <div class="card-body" style="padding: 0;">
-                <table class="market-table">
+                <table class="market-table" style="width: 100%; border-collapse: separate; border-spacing: 0 8px;">
                     <thead>
-                        <tr>
-                            <th>DATE</th>
-                            <th>CITY</th>
-                            <th>TYPE</th>
-                            <th>MARKET</th>
-                            <th>INVESTED</th>
-                            <th>REALIZED P&L</th>
+                        <tr style="text-align: left; color: var(--text-dim); font-size: 0.7rem; text-transform: uppercase;">
+                            <th style="padding: 10px; width: 100px;">DATE</th>
+                            <th style="padding: 10px; width: 120px;">CITY</th>
+                            <th style="padding: 10px; width: 100px;">TYPE</th>
+                            <th style="padding: 10px; min-width: 200px;">MARKET</th>
+                            <th style="padding: 10px; width: 110px; text-align: right;">INVESTED</th>
+                            <th style="padding: 10px; width: 130px; text-align: right;">REALIZED P&L</th>
                         </tr>
                     </thead>
                     <tbody id="market-table-body">
@@ -499,15 +490,17 @@ function renderTrades(trades) {
     const typeIcon = typeIcons[type] || "🔹";
 
     return `
-        <tr>
+        <tr class="animate-row" style="cursor:pointer" onclick="showTradeDetails(${idx})">
             <td style="padding:12px;color:var(--text-secondary);font-size:12px;">${dateStr}</td>
-            <td style="padding:12px;font-weight:500;">${city}</td>
-            <td style="padding:12px;font-size:12px;">${typeIcon} ${type}</td>
-            <td style="padding:12px;font-size:12px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+            <td style="padding:12px;"><span class="city-badge">${city}</span></td>
+            <td style="padding:12px;">
+                <span class="type-badge type-${type.toLowerCase()}">${typeIcon} ${type}</span>
+            </td>
+            <td style="padding:12px;font-size:12px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-primary)">
                 ${t.market_question || 'N/A'}
             </td>
-            <td style="padding:12px;" class="accent-text">$${parseFloat(t.invested_usdc || 0).toFixed(2)}</td>
-            <td style="padding:12px;" class="${pnlClass}">
+            <td style="padding:12px;text-align:right;" class="accent-text">$${parseFloat(t.invested_usdc || 0).toFixed(2)}</td>
+            <td style="padding:12px;text-align:right;" class="${pnlClass}">
                 ${t.realized_pnl > 0 ? '+' : ''}${t.realized_pnl ? t.realized_pnl.toFixed(2) : '0.00'}
             </td>
         </tr>
@@ -754,7 +747,6 @@ function showTradeDetails(idx) {
       ${t.token_id ? `<span>Token: <span style="font-family:monospace;color:rgba(255,255,255,0.35)">${String(t.token_id).substring(0,14)}…</span></span>` : ''}
     </div>
   `;
-  
   modal.style.display = 'flex';
 }
 
@@ -838,6 +830,13 @@ async function fetchStatus() {
   }
 }
 
+function formatColorClass(line) {
+  if (line.includes('SUCCESS') || line.includes('EXECUTED')) return 'val-green';
+  if (line.includes('FAILED') || line.includes('ERROR') || line.includes('REJECTED')) return 'val-red';
+  if (line.includes('Council:') || line.includes('Director:')) return 'val-cyan';
+  return '';
+}
+
 async function fetchLogs() {
   try {
     const res = await fetch(`${API}/api/logs/recent?lines=40`, { signal: AbortSignal.timeout(8000) });
@@ -845,20 +844,21 @@ async function fetchLogs() {
     const d = await res.json();
     const lines = d.lines || [];
     
-    // Naive diff check to avoid unnecessary DOM paints
     const newStr = lines.join('');
     if (newStr !== prevDataStr) {
       prevDataStr = newStr;
+      const container = document.getElementById('log-lines');
+      if (!container) return;
 
       const html = lines.map(l => `<div class="log-line ${formatColorClass(l)}">${l.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>`).join('');
-      
-      const container = document.getElementById('log-lines');
       const wasAtBottom = container.scrollHeight - container.clientHeight <= container.scrollTop + 20;
       
       container.innerHTML = html;
       if (wasAtBottom) container.scrollTop = container.scrollHeight;
     }
-  } catch(e) {} finally {
+  } catch(e) {
+    console.warn("Log Sync Wait...");
+  } finally {
     setTimeout(fetchLogs, 2000);
   }
 }
