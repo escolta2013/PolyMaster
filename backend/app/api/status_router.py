@@ -24,6 +24,7 @@ def _get_supabase():
 import time
 from eth_account import Account
 from web3 import Web3
+from py_clob_client.clob_types import AssetType, BalanceAllowanceParams
 from app.core.config import settings
 from app.engines.wallet.manager import wallet_manager
 from app.engines.council.cache import council_cache
@@ -67,15 +68,7 @@ def get_status():
         p_client = PolyClient.get_instance()
         clob_bal = 0.0
         
-        # 1. Check CLOB (Funds ready to trade)
-        try:
-            if p_client and p_client.sdk:
-                clob_bal_raw = p_client.sdk.get_balance_allowance(BalanceAllowanceParams(asset_type=AssetType.COLLATERAL))
-                clob_bal = float(clob_bal_raw.get("balance", 0)) / 10**6
-        except Exception as e:
-            logger.debug(f"CLOB balance fetch skipped: {e}")
-
-        # 2. Check On-Chain (Funds in Wallet)
+        # 1. On-Chain Totals (The most reliable source for "My Funds")
         main_addr = Account.from_key(settings.PK).address
         bal_main = wallet_manager.get_onchain_balance(Web3.to_checksum_address(main_addr))
         
@@ -84,11 +77,39 @@ def get_status():
         if proxy_addr:
             bal_proxy = wallet_manager.get_onchain_balance(Web3.to_checksum_address(proxy_addr))
         
-        # Total sum
-        # If CLOB has money, show that. If not, show what's in the wallets.
-        usdc_balance = clob_bal if clob_bal > 0 else (bal_main + bal_proxy)
+        chain_sum = bal_main + bal_proxy
+
+        # 2. CLOB Balance (The money inside the Exchange/Polymarket)
+        clob_bal = 0.0
+        try:
+            if p_client and p_client.sdk:
+                # Attempt 1: Current configuration (Proxy or EOA)
+                res = p_client.sdk.get_balance_allowance(BalanceAllowanceParams(asset_type=AssetType.COLLATERAL))
+                clob_bal = float(res.get("balance", 0)) / 10**6
+                
+                # Attempt 2: If zero and we have a Proxy, try the Main Account (EOA)
+                # (In case trades were won before the proxy was set up or active)
+                if clob_bal == 0 and getattr(settings, 'POLY_PROXY_ADDRESS', None):
+                    try:
+                        from py_clob_client.client import ClobClient
+                        temp_client = ClobClient(host=p_client.host, key=settings.PK, chain_id=137, signature_type=0)
+                        res_eoa = temp_client.get_balance_allowance(BalanceAllowanceParams(asset_type=AssetType.COLLATERAL))
+                        clob_eoa = float(res_eoa.get("balance", 0)) / 10**6
+                        if clob_eoa > 0:
+                            clob_bal = clob_eoa
+                            logger.info(f"[BalanceSync] Found ${clob_eoa} in Main CLOB (Proxy was empty)")
+                    except:
+                        pass
+        except Exception as e:
+            logger.debug(f"CLOB balance fetch skipped: {e}")
+
+        # Final Balance: Max of On-Chain vs Exchange (Avoid double counting, prioritize exchange)
+        usdc_balance = max(chain_sum, clob_bal)
         
-        # Guardar en el cache global por si acaso
+        # Dashboard Console Logging
+        logger.info(f"[BalanceSync] Total: ${usdc_balance:.2f} | Exchange: ${clob_bal:.2f} | Wallet: ${chain_sum:.2f}")
+
+        # Save to global cache
         _WALLET_BALANCE_CACHE["balance"] = usdc_balance
         _WALLET_BALANCE_CACHE["last_updated"] = time.time()
         
