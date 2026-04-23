@@ -104,7 +104,7 @@ class PolyClient:
                     logger.success(f"Authenticated SDK Client Ready (Type {alt_sig_type} FALLBACK, funder={alt_funder})")
                 except Exception as e2:
                     logger.error(f"All authentication attempts failed: {e2}")
-                    self.sdk = temp_client
+                    self.sdk = None
         else:
             logger.info("Initializing Read-Only PolyClient")
             self.sdk = PolymarketClobClient(host=self.host, chain_id=chain_id)
@@ -117,7 +117,8 @@ class PolyClient:
         from web3 import Web3
         is_proxy = hasattr(settings, 'POLY_PROXY_ADDRESS') and settings.POLY_PROXY_ADDRESS
         sig_type = 2 if is_proxy else 0
-        funder = Web3.to_checksum_address(settings.POLY_PROXY_ADDRESS) if is_proxy else None
+        funder = Web3.to_checksum_address(Account.from_key(pk).address) if is_proxy else None
+        proxy_address = Web3.to_checksum_address(settings.POLY_PROXY_ADDRESS) if is_proxy else None
         
         try:
             client = PolymarketClobClient(
@@ -125,7 +126,8 @@ class PolyClient:
                 key=pk,
                 chain_id=137,
                 signature_type=sig_type,
-                funder=funder
+                funder=funder,
+                proxy_address=proxy_address
             )
             creds = client.create_or_derive_api_creds()
             client.set_api_creds(creds)
